@@ -1,0 +1,246 @@
+#pragma once
+#include <map>
+#include <string>
+
+#include "../../externals/Zydis/Zydis.h"
+
+namespace VEXA
+{
+	typedef uint16_t reg_t;
+
+	class X86CPU
+	{
+	public:
+		X86CPU(std::shared_ptr<z3::context> c);
+		void Write(reg_t reg, Value value);
+		Value Read(reg_t reg);
+		std::shared_ptr<X86CPU> clone();
+	//private:
+		std::shared_ptr<z3::context> context;
+		std::unordered_map<reg_t, std::shared_ptr<VEXA::Value>> registers;
+	};
+
+	namespace X64
+	{			
+		// RAX
+		static constexpr reg_t RAX = 0;
+		static constexpr reg_t EAX = 1;
+		static constexpr reg_t AX = 2;
+		static constexpr reg_t AL = 3;
+		static constexpr reg_t AH = 4;
+
+		// RBX
+		static constexpr reg_t RBX = 5;
+		static constexpr reg_t EBX = 6;
+		static constexpr reg_t BX = 7;
+		static constexpr reg_t BL = 8;
+		static constexpr reg_t BH = 9;
+
+		// RCX
+		static constexpr reg_t RCX = 10;
+		static constexpr reg_t ECX = 11;
+		static constexpr reg_t CX = 12;
+		static constexpr reg_t CL = 13;
+		static constexpr reg_t CH = 14;
+
+		// RDX
+		static constexpr reg_t RDX = 15;
+		static constexpr reg_t EDX = 16;
+		static constexpr reg_t DX = 17;
+		static constexpr reg_t DL = 18;
+		static constexpr reg_t DH = 19;
+
+		// RDI
+		static constexpr reg_t RDI = 20;
+		static constexpr reg_t EDI = 21;
+		static constexpr reg_t DI = 22;
+		static constexpr reg_t DIL = 23;
+
+		// RSI
+		static constexpr reg_t RSI = 24;
+		static constexpr reg_t ESI = 25;
+		static constexpr reg_t SI = 26;
+		static constexpr reg_t SIL = 27;
+
+		// RBP
+		static constexpr reg_t RBP = 28;
+		static constexpr reg_t EBP = 29;
+		static constexpr reg_t BP = 30;
+		static constexpr reg_t BPL = 31;
+
+		// RSP
+		static constexpr reg_t RSP = 32;
+		static constexpr reg_t ESP = 33;
+		static constexpr reg_t SP = 34;
+		static constexpr reg_t SPL = 35;
+
+		// R8
+		static constexpr reg_t R8 = 36;
+		static constexpr reg_t R8D = 37;
+		static constexpr reg_t R8W = 38;
+		static constexpr reg_t R8B = 39;
+
+		// R9
+		static constexpr reg_t R9 = 40;
+		static constexpr reg_t R9D = 41;
+		static constexpr reg_t R9W = 42;
+		static constexpr reg_t R9B = 43;
+
+		// R10
+		static constexpr reg_t R10 = 44;
+		static constexpr reg_t R10D = 45;
+		static constexpr reg_t R10W = 46;
+		static constexpr reg_t R10B = 47;
+
+		// R11
+		static constexpr reg_t R11 = 48;
+		static constexpr reg_t R11D = 49;
+		static constexpr reg_t R11W = 50;
+		static constexpr reg_t R11B = 51;
+
+		// R12
+		static constexpr reg_t R12 = 52;
+		static constexpr reg_t R12D = 53;
+		static constexpr reg_t R12W = 54;
+		static constexpr reg_t R12B = 55;
+
+		// R13
+		static constexpr reg_t R13 = 56;
+		static constexpr reg_t R13D = 57;
+		static constexpr reg_t R13W = 58;
+		static constexpr reg_t R13B = 59;
+
+		// R14
+		static constexpr reg_t R14 = 60;
+		static constexpr reg_t R14D = 61;
+		static constexpr reg_t R14W = 62;
+		static constexpr reg_t R14B = 63;
+
+		// R15
+		static constexpr reg_t R15 = 64;
+		static constexpr reg_t R15D = 65;
+		static constexpr reg_t R15W = 66;
+		static constexpr reg_t R15B = 67;
+
+		// RFLAGS
+		static constexpr reg_t RFLAGS = 68;
+		static constexpr reg_t CF = 69;
+		static constexpr reg_t ZF = 70;
+		static constexpr reg_t SF = 71;
+		static constexpr reg_t OF = 72;
+
+		static constexpr reg_t RIP = 73;
+
+		static constexpr reg_t NB_REGS = 74;
+
+		struct RegInfo {
+			reg_t base_id;
+			uint16_t size_bits;
+			uint16_t offset_bits;
+		};
+
+		static const std::unordered_map<reg_t, RegInfo> reg_info =
+		{
+			// RIP
+			{ RIP, { RIP, 64, 0} },
+
+			// RAX
+			{ RAX, { RAX, 64, 0 } },  { EAX, { RAX, 32, 0 } },
+			{ AX,  { RAX, 16, 0 } },  { AL,  { RAX, 8, 0 } },
+			{ AH,  { RAX, 8, 8 } },
+
+			// RBX
+			{ RBX, { RBX, 64, 0 } },  { EBX, { RBX, 32, 0 } },
+			{ BX,  { RBX, 16, 0 } },  { BL,  { RBX, 8, 0 } },
+			{ BH,  { RBX, 8, 8 } },
+
+			// RCX
+			{ RCX, { RCX, 64, 0 } },  { ECX, { RCX, 32, 0 } },
+			{ CX,  { RCX, 16, 0 } },  { CL,  { RCX, 8, 0 } },
+			{ CH,  { RCX, 8, 8 } },
+
+			// RDX
+			{ RDX, { RDX, 64, 0 } },  { EDX, { RDX, 32, 0 } },
+			{ DX,  { RDX, 16, 0 } },  { DL,  { RDX, 8, 0 } },
+			{ DH,  { RDX, 8, 8 } },
+
+			// RDI
+			{ RDI, { RDI, 64, 0 } },  { EDI, { RDI, 32, 0 } },
+			{ DI,  { RDI, 16, 0 } },  { DIL, { RDI, 8, 0 } },
+
+			// RSI
+			{ RSI, { RSI, 64, 0 } },  { ESI, { RSI, 32, 0 } },
+			{ SI,  { RSI, 16, 0 } },  { SIL, { RSI, 8, 0 } },
+
+			// RBP
+			{ RBP, { RBP, 64, 0 } },  { EBP, { RBP, 32, 0 } },
+			{ BP,  { RBP, 16, 0 } },  { BPL, { RBP, 8, 0 } },
+
+			// RSP
+			{ RSP, { RSP, 64, 0 } },  { ESP, { RSP, 32, 0 } },
+			{ SP,  { RSP, 16, 0 } },  { SPL, { RSP, 8, 0 } },
+
+			// R8
+			{ R8,  { R8, 64, 0 } },   { R8D, { R8, 32, 0 } },
+			{ R8W, { R8, 16, 0 } },   { R8B, { R8, 8, 0 } },
+
+			// R9
+			{ R9,  { R9, 64, 0 } },   { R9D, { R9, 32, 0 } },
+			{ R9W, { R9, 16, 0 } },   { R9B, { R9, 8, 0 } },
+
+			// R10
+			{ R10, { R10, 64, 0 } },  { R10D, { R10, 32, 0 } },
+			{ R10W, { R10, 16, 0 } }, { R10B, { R10, 8, 0 } },
+
+			// R11
+			{ R11, { R11, 64, 0 } },  { R11D, { R11, 32, 0 } },
+			{ R11W, { R11, 16, 0 } }, { R11B, { R11, 8, 0 } },
+
+			// R12
+			{ R12, { R12, 64, 0 } },  { R12D, { R12, 32, 0 } },
+			{ R12W, { R12, 16, 0 } }, { R12B, { R12, 8, 0 } },
+
+			// R13
+			{ R13, { R13, 64, 0 } },  { R13D, { R13, 32, 0 } },
+			{ R13W, { R13, 16, 0 } }, { R13B, { R13, 8, 0 } },
+
+			// R14
+			{ R14, { R14, 64, 0 } },  { R14D, { R14, 32, 0 } },
+			{ R14W, { R14, 16, 0 } }, { R14B, { R14, 8, 0 } },
+
+			// R15
+			{ R15, { R15, 64, 0 } },  { R15D, { R15, 32, 0 } },
+			{ R15W, { R15, 16, 0 } }, { R15B, { R15, 8, 0 } },
+
+			// RFLAGS
+			{ RFLAGS, { RFLAGS, 64, 0} }, { CF, { RFLAGS, 1, 0 } },
+			{ ZF, { RFLAGS, 1, 6 } }, { SF, {RFLAGS, 1, 7 } },
+			{ OF, { RFLAGS, 1, 11 } }
+		};
+
+		static const std::unordered_map<reg_t, std::string> reg_to_str =
+		{
+			{RIP, "rip"},
+			{RAX, "rax"}, {EAX, "eax"}, {AX, "ax"}, {AL, "al"}, {AH, "ah"},
+			{RBX, "rbx"}, {EBX, "ebx"}, {BX, "bx"}, {BL, "bl"}, {BH, "bh"},
+			{RCX, "rcx"}, {ECX, "ecx"}, {CX, "cx"}, {CL, "cl"}, {CH, "ch"},
+			{RDX, "rdx"}, {EDX, "edx"}, {DX, "dx"}, {DL, "dl"}, {DH, "dh"},
+			{RDI, "rdi"}, {EDI, "edi"}, {DI, "di"}, {DIL, "dil"},
+			{RSI, "rsi"}, {ESI, "esi"}, {SI, "si"}, {SIL, "sil"},
+			{RBP, "rbp"}, {EBP, "ebp"}, {BP, "bp"}, {BPL, "bpl"},
+			{RSP, "rsp"}, {ESP, "esp"}, {SP, "sp"}, {SPL, "spl"},
+			{R8, "r8"},   {R8D, "r8d"}, {R8W, "r8w"}, {R8B, "r8b"},
+			{R9, "r9"},   {R9D, "r9d"}, {R9W, "r9w"}, {R9B, "r9b"},
+			{R10, "r10"}, {R10D, "r10d"}, {R10W, "r10w"}, {R10B, "r10b"},
+			{R11, "r11"}, {R11D, "r11d"}, {R11W, "r11w"}, {R11B, "r11b"},
+			{R12, "r12"}, {R12D, "r12d"}, {R12W, "r12w"}, {R12B, "r12b"},
+			{R13, "r13"}, {R13D, "r13d"}, {R13W, "r13w"}, {R13B, "r13b"},
+			{R14, "r14"}, {R14D, "r14d"}, {R14W, "r14w"}, {R14B, "r14b"},
+			{R15, "r15"}, {R15D, "r15d"}, {R15W, "r15w"}, {R15B, "r15b"},
+			{RFLAGS, "rflags"}, {CF, "cf"}, {ZF, "zf"}, {SF, "sf"}, {OF, "of"}
+		};
+
+		// extern because of multiple symbols compilation error, idk why
+		extern std::unordered_map<ZydisRegister, VEXA::reg_t> zydisToVexaReg;
+	}
+}
