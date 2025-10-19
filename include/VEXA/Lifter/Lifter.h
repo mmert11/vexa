@@ -1,5 +1,5 @@
 #pragma once
-#include "../../externals/Zydis/Zydis.h"
+#include <Zydis/Zydis.h>
 
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Value.h>
@@ -63,6 +63,7 @@ namespace VEXA
 		InstrHandler(cmp);
 		InstrHandler(cmovnz);
 		InstrHandler(ret);
+		InstrHandler(jmp);
 
 		VEXA::Engine* symEngine;
 		std::shared_ptr<llvm::LLVMContext> llvm_context;

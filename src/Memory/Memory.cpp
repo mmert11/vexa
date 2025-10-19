@@ -1,7 +1,6 @@
 #include <VEXA/VEXA.h>
 
 #include <iostream>
-#include <Windows.h>
 
 VEXA::Memory::Memory()
 {

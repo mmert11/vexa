@@ -63,8 +63,8 @@ void VEXA::Lifter::LiftInstruction(ZydisDisassembledInstruction instruction)
 		bb_name, func);
 
 	builder->CreateBr(address_bb);
-	builder = std::make_shared<llvm::IRBuilder<>>(address_bb);
-
+	builder->SetInsertPoint(address_bb);
+	
 	// match the instruction with handlers and execute
 	auto handler = handlers.find(instruction.info.mnemonic);
 	if (handler != handlers.end())

@@ -11,8 +11,27 @@ Value VEXA::Value::operator==(const Value& other) const
 	return Value(this->expr() == other.expr());
 }
 
+// TODO: learn
 Value Value::operator+(const Value& other) const {
-	return Value(this->expr() + other.expr());
+    z3::expr left = this->expr();
+    z3::expr right = other.expr();
+    
+    unsigned left_size = left.get_sort().bv_size();
+    unsigned right_size = right.get_sort().bv_size();
+    
+    unsigned target_size = std::max(left_size, right_size);
+
+    if (left_size < target_size) {
+        unsigned num_bits_to_add = target_size - left_size; 
+        left = z3::zext(left, num_bits_to_add);
+    } 
+    
+    if (right_size < target_size) {
+        unsigned num_bits_to_add = target_size - right_size;
+        right = z3::zext(right, num_bits_to_add);
+    }
+    
+    return Value(left + right);
 }
 
 int64_t VEXA::Value::as_int64()

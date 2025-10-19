@@ -10,7 +10,8 @@ void VEXA::Lifter::InitHandlers()
 	{ ZydisMnemonic::ZYDIS_MNEMONIC_ADD, LLVMLambdaWrapper(add)},
 	{ ZydisMnemonic::ZYDIS_MNEMONIC_CMP, LLVMLambdaWrapper(cmp)},
 	{ ZydisMnemonic::ZYDIS_MNEMONIC_CMOVNZ, LLVMLambdaWrapper(cmovnz)},
-	{ ZydisMnemonic::ZYDIS_MNEMONIC_RET, LLVMLambdaWrapper(ret)}
+	{ ZydisMnemonic::ZYDIS_MNEMONIC_RET, LLVMLambdaWrapper(ret)},
+	{ ZydisMnemonic::ZYDIS_MNEMONIC_JMP, LLVMLambdaWrapper(jmp)}
 	};
 }
 
@@ -53,4 +54,11 @@ LifterHandler(cmovnz)
 
 	llvm::Value* valueToSet = builder->CreateSelect(cond, src, dest);
 	SetOperand(instr.operands[0], valueToSet);
+}
+
+LifterHandler(jmp)
+{
+	VEXA::Value destVEXA = symEngine->GetOperand(instr.operands[0]);
+    if (destVEXA.type() == ValueType::SYMBOLIC)
+		throw std::runtime_error("Resolving symbolic destinations is not implemented yet");
 }

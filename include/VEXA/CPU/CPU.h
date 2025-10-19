@@ -2,7 +2,7 @@
 #include <map>
 #include <string>
 
-#include "../../externals/Zydis/Zydis.h"
+#include <Zydis/Zydis.h>
 
 namespace VEXA
 {
@@ -139,7 +139,7 @@ namespace VEXA
 			uint16_t offset_bits;
 		};
 
-		static const std::unordered_map<reg_t, RegInfo> reg_info =
+		static const std::map<reg_t, RegInfo> reg_info =
 		{
 			// RIP
 			{ RIP, { RIP, 64, 0} },

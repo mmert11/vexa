@@ -22,7 +22,7 @@ void VEXA::Engine::Run()
 	TRY()
 	{
 		lifter = std::make_shared<VEXA::Lifter>(this->ReadRegister(X64::RIP).as_int64(), this);
-
+		
 		while (true)
 		{
 			Value RIP = this->ReadRegister(X64::RIP);
@@ -62,7 +62,6 @@ void VEXA::Engine::Run()
 			else
 				break;
 		}
-		printf("\n");
 
 		//std::cout << "---- Unoptimized IR ----" << std::endl;
 		//lifter->PrintIR();
@@ -76,7 +75,7 @@ void VEXA::Engine::Run()
 	CATCH("Engine error")
 }
 
-void VEXA::Engine::ProcessInstruction(ZydisDisassembledInstruction instruction)
+void VEXA::Engine::ProcessInstruction(ZydisDisassembledInstruction& instruction)
 {
 	auto handler = handlers.find(instruction.info.mnemonic);
 	if (handler != handlers.end()) 
@@ -151,6 +150,46 @@ bool VEXA::Engine::IsPath(ZydisDisassembledInstruction instruction)
 		return false;
 }
 
+void VEXA::Engine::WriteMemory(Value addr, uint8_t* buffer, int64_t size)
+{
+	// write into address byte by byte
+	for (int64_t i = 0; i < size; i++)
+	{
+		Value offset = CreateConcreteVar(i, 64);
+		Value target_addr = Add(addr, offset);
+
+		Value byte_to_write = CreateConcreteVar(*(uint8_t*)(buffer + i), 8);
+		WriteMemory(target_addr, byte_to_write, 8);
+	}
+}
+
+void VEXA::Engine::PrintState()
+{
+	std::cout << "------ VEXA Symbolic State ------" << std::endl;
+	for (auto& [reg_id, reg_info] : X64::reg_info)
+	{
+		if (X64::reg_info.at(reg_id).size_bits < 64)
+			continue;
+
+		Value registerValue = ReadRegister(reg_id);
+		std::cout << X64::reg_to_str.at(reg_id) << ": ";
+
+		if (registerValue.type() == ValueType::CONCRETE)
+			std::cout << std::hex << registerValue.as_int64() << std::endl;
+		else
+			std::cout << registerValue.expr().to_string() << std::endl;
+	}
+}
+
+void VEXA::Engine::EventHooks(EventType type, EventWhen when, ZydisDisassembledInstruction instr = ZydisDisassembledInstruction())
+{
+	for (auto& event : event_hooks)
+	{
+		if (event.type == type && event.when == when)
+			event.callback(*this, instr);
+	}
+}
+
 std::shared_ptr<z3::context> VEXA::Engine::GetContext()
 {
 	return context;
@@ -169,19 +208,6 @@ std::shared_ptr<VEXA::SymbolicState> VEXA::Engine::TakeSnapshot()
 void VEXA::Engine::RestoreSnapshot(std::shared_ptr<SymbolicState> newState)
 {
 	state = newState;
-}
-
-void VEXA::Engine::WriteMemory(Value addr, uint8_t* buffer, int64_t size)
-{
-	// write into address byte by byte
-	for (int64_t i = 0; i < size; i++)
-	{
-		Value offset = CreateConcreteVar(i, 64);
-		Value target_addr = Add(addr, offset);
-
-		Value byte_to_write = CreateConcreteVar(*(uint8_t*)(buffer + i), 8);
-		WriteMemory(target_addr, byte_to_write, 8);
-	}
 }
 
 void VEXA::Engine::WriteMemory(Value addr, Value value, int32_t size)
@@ -222,31 +248,4 @@ VEXA::Value VEXA::Engine::Add(Value a, Value b)
 VEXA::Value VEXA::Engine::Sub(Value a, Value b)
 {
 	return Value(a.expr() - b.expr());
-}
-
-void VEXA::Engine::PrintState()
-{
-	std::cout << "------ VEXA Symbolic State ------" << std::endl;
-	for (auto& [reg_id, reg_info] : X64::reg_info)
-	{
-		if (X64::reg_info.at(reg_id).size_bits < 64)
-			continue;
-
-		Value registerValue = ReadRegister(reg_id);
-		std::cout << X64::reg_to_str.at(reg_id) << ": ";
-
-		if (registerValue.type() == ValueType::CONCRETE)
-			std::cout << std::hex << registerValue.as_int64() << std::endl;
-		else
-			std::cout << registerValue.expr().to_string() << std::endl;
-	}
-}
-
-void VEXA::Engine::EventHooks(EventType type, EventWhen when, ZydisDisassembledInstruction instr = ZydisDisassembledInstruction())
-{
-	for (auto& event : event_hooks)
-	{
-		if (event.type == type && event.when == when)
-			event.callback(*this, instr);
-	}
 }

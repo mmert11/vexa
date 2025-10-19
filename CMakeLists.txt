@@ -1,4 +1,5 @@
 ﻿# rmdir build; cmake -B build -S . -DLLVM_DIR="D:\Libraries\llvm-project\build\lib\cmake\llvm" -DZ3_DIR="D:\\Libraries\\z3\\build"; cmake --build build --config Release --parallel; cmake --install build
+# cmake -B build -S . -DZ3_DIR="/opt/z3/lib/cmake/z3/";
 
 cmake_minimum_required(VERSION 3.8)
 project(VEXA)
@@ -21,13 +22,12 @@ if (POLICY CMP0141)
 endif()
 
 set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}" CACHE PATH "Installation directory" FORCE)
-add_compile_options(/MP)
 
 find_package(LLVM REQUIRED CONFIG)
 find_package(Z3 REQUIRED CONFIG)
+find_package(ZYDIS REQUIRED CONFIG)
 
 add_library(VEXA STATIC
-"include/externals/Zydis/Zydis.c"
 "include/VEXA/VEXA.h"
 "src/VEXA.cpp" 
 "src/Memory/Memory.cpp"
@@ -40,9 +40,6 @@ add_library(VEXA STATIC
 "src/Engine/Instructions.cpp"
 "src/Solver/Solver.cpp")
 
-target_include_directories(VEXA PRIVATE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include/externals/Zydis>
-)
 target_compile_definitions(VEXA PUBLIC ZYDIS_STATIC_BUILD)
 
 llvm_map_components_to_libnames(LLVM_LIBS
@@ -53,6 +50,7 @@ passes
 transformutils
 ipo
 )
+
 target_link_libraries(VEXA PUBLIC ${LLVM_LIBS})
 target_include_directories(VEXA PUBLIC ${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
@@ -76,11 +74,6 @@ install(TARGETS VEXA
 
 install(DIRECTORY
     include/VEXA
-    DESTINATION include/
-)
-
-install(DIRECTORY
-    include/externals
     DESTINATION include/
 )
 

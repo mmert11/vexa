@@ -4,23 +4,23 @@
 
 #include <iostream>
 
-#define VexaInstHandler(instName) uint64_t instName(ZydisDisassembledInstruction instruction)
+#define VexaInstHandler(instName) uint64_t instName(ZydisDisassembledInstruction& instruction)
 
 namespace VEXA
 {
-	static enum class EventType
+	enum class EventType
 	{
 		EXEC,
 		PATH
 	};
 
-	static enum class EventWhen
+	enum class EventWhen
 	{
 		BEFORE,
 		AFTER
 	};
 
-	static enum class EventAction
+	enum class EventAction
 	{
 		CONTINUE,
 		HALT
@@ -80,15 +80,16 @@ namespace VEXA
 		Value ReadRegister(reg_t reg);
 		/// @brief Prints the CPU state
 		void PrintState();
+		
+		Value GetOperand(ZydisDecodedOperand op);
+		void SetOperand(ZydisDecodedOperand op, Value value);
 
 	private:
 		std::shared_ptr<z3::context> context;
 		std::shared_ptr<SymbolicState> state;
 		std::shared_ptr<Lifter> lifter;
 
-		void ProcessInstruction(ZydisDisassembledInstruction instruction);
-		Value GetOperand(ZydisDecodedOperand op);
-		void SetOperand(ZydisDecodedOperand op, Value value);
+		void ProcessInstruction(ZydisDisassembledInstruction& instruction);
 
 		// operations
 		Value Add(Value a, Value b);
@@ -102,8 +103,9 @@ namespace VEXA
 		VexaInstHandler(ret);
 		VexaInstHandler(cmp);
 		VexaInstHandler(cmovnz);
+		VexaInstHandler(jmp);
 
-		std::unordered_map<ZydisMnemonic, std::function<uint64_t(ZydisDisassembledInstruction)>> handlers;
+		std::unordered_map<ZydisMnemonic, std::function<uint64_t(ZydisDisassembledInstruction&)>> handlers;
 
 		// events
 		std::vector<EventHook> event_hooks;
