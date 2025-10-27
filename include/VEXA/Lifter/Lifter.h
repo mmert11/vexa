@@ -12,19 +12,13 @@ namespace VEXA { class Engine; }
 
 namespace VEXA
 {
-	struct Path
-	{
-	public:
-		llvm::BasicBlock* true_block; 
-		llvm::BasicBlock* false_block;
-	};
-
 	class Lifter
 	{
 	public:
 		Lifter();
 		Lifter(uint64_t address, VEXA::Engine* engine);
-		void LiftInstruction(ZydisDisassembledInstruction instruction);
+		void LiftInstruction(ZydisDisassembledInstruction& instruction);
+		
 		void Optimize();
 		void PrintIR();
 
@@ -35,27 +29,26 @@ namespace VEXA
 			{X64::RDX, 3},
 			{X64::RFLAGS, 4}
 		};
+		std::map<int, std::shared_ptr<llvm::Value>> registers;
+		std::shared_ptr<llvm::IRBuilder<>> builder;
 
 		std::string InstrToBrName(std::string text);
-
 		void SetOperand(ZydisDecodedOperand operand, llvm::Value* value);
 		llvm::Value* GetOperand(ZydisDecodedOperand operand);
-
 		void WriteRegister(VEXA::reg_t reg, llvm::Value* value);
 		llvm::Value* ReadRegister(VEXA::reg_t reg);
-
 		void SetLLVMRegister(int reg_id, llvm::Value* value);
 		llvm::Value* GetLLVMRegister(int reg_id);
-
 		llvm::Value* GetCondition(ZydisDisassembledInstruction instruction);
+		llvm::BasicBlock* CreateCondBr(ZydisDisassembledInstruction instruction);
 		
-	//private:
+	private:
 		std::string GetBlockNameFromInstr(ZydisDisassembledInstruction instruction, int id);
+		void NormalizeIntSizes(llvm::Value*& a, llvm::Value*& b);
 		void InitHandlers();
 		bool IsBranching();
 
-		std::unordered_map<ZydisMnemonic, std::function<void(ZydisDisassembledInstruction)>> handlers;
-		std::map<uint32_t, Path> paths;
+		std::map<ZydisMnemonic, std::function<void(ZydisDisassembledInstruction)>> handlers;
 		int vip;
 
 		InstrHandler(mov);
@@ -64,13 +57,11 @@ namespace VEXA
 		InstrHandler(cmovnz);
 		InstrHandler(ret);
 		InstrHandler(jmp);
+		InstrHandler(jnz);
 
 		VEXA::Engine* symEngine;
 		std::shared_ptr<llvm::LLVMContext> llvm_context;
-		std::shared_ptr<llvm::IRBuilder<>> builder;
 		std::shared_ptr<llvm::Module> module;
 		llvm::Function* func = nullptr;
-
-		std::unordered_map<int, llvm::Value*> registers;
 	};
 }

@@ -42,7 +42,7 @@ VEXA::Lifter::Lifter(uint64_t address, VEXA::Engine* engine)
 	{
 		llvm::Argument* argument = func->getArg(reg.second);
 		argument->setName(X64::reg_to_str.at(reg.first));
-		registers[reg.second] = argument;
+		registers[reg.second] = std::shared_ptr<llvm::Value>(argument, [](llvm::Value*) {});
 	}
 
 	// create entry block of the function
@@ -52,7 +52,7 @@ VEXA::Lifter::Lifter(uint64_t address, VEXA::Engine* engine)
 	InitHandlers();
 }
 
-void VEXA::Lifter::LiftInstruction(ZydisDisassembledInstruction instruction)
+void VEXA::Lifter::LiftInstruction(ZydisDisassembledInstruction& instruction)
 {
 	TRY();
 
@@ -78,25 +78,47 @@ void VEXA::Lifter::LiftInstruction(ZydisDisassembledInstruction instruction)
 	CATCH("Lifter error")
 }
 
-llvm::Value* VEXA::Lifter::GetLLVMRegister(int reg_id)
-{
-	return registers.at(reg_id);
-}
-
 llvm::Value* VEXA::Lifter::GetCondition(ZydisDisassembledInstruction instruction)
 {
 	switch (instruction.info.mnemonic)
 	{
-	case ZYDIS_MNEMONIC_CMOVNZ:
+	case ZYDIS_MNEMONIC_JNZ:
 		return builder->CreateICmpEQ(ReadRegister(X64::ZF), llvm::ConstantInt::get(builder->getInt1Ty(), 0));
 	default:
-		break;
+		throw std::runtime_error("Unimplemented conditional instruction");
 	}
+}
+
+// get condition, create true and false basic blocks
+// set insert point on true block and return the false block
+llvm::BasicBlock* VEXA::Lifter::CreateCondBr(ZydisDisassembledInstruction instruction)
+{
+	llvm::Value* cond = GetCondition(instruction);
+	std::string bb_name = GetBlockNameFromInstr(instruction, vip);
+	llvm::BasicBlock* cond_bb = llvm::BasicBlock::Create(*llvm_context,
+		bb_name, func);
+
+	builder->CreateBr(cond_bb);
+	builder->SetInsertPoint(cond_bb);
+
+	llvm::BasicBlock* true_bb = llvm::BasicBlock::Create(*llvm_context,
+		"cond_true", func);
+	llvm::BasicBlock* false_bb = llvm::BasicBlock::Create(*llvm_context,
+		"cond_false", func);
+
+	builder->CreateCondBr(cond, true_bb, false_bb);
+	builder->SetInsertPoint(true_bb);
+	return false_bb;
+}
+
+llvm::Value* VEXA::Lifter::GetLLVMRegister(int reg_id)
+{
+	return registers.at(reg_id).get();
 }
 
 void VEXA::Lifter::SetLLVMRegister(int reg_id, llvm::Value* value)
 {
-	registers[reg_id] = value;
+	registers[reg_id] = std::shared_ptr<llvm::Value>(value, [](llvm::Value*) {});
 }
 
 void VEXA::Lifter::SetOperand(ZydisDecodedOperand operand, llvm::Value* value)
@@ -136,7 +158,6 @@ llvm::Value* VEXA::Lifter::GetOperand(ZydisDecodedOperand operand)
 		throw std::runtime_error("Memory operand is not implemented yet");
 	default:
 		throw std::runtime_error("Unimplemented operand type!");
-		break;
 	}
 }
 
@@ -174,15 +195,14 @@ void VEXA::Lifter::WriteRegister(VEXA::reg_t reg, llvm::Value* value)
 {
 	X64::RegInfo reg_info = X64::reg_info.at(reg);
 	llvm::Value* base_reg_value = GetLLVMRegister(vexaToLLVMRegId[reg_info.base_id]);
-
 	llvm::Type* base_type = llvm::Type::getIntNTy(*llvm_context, 64);
-	llvm::Value* value_64 = builder->CreateZExtOrTrunc(value, base_type, X64::reg_to_str.at(reg_info.base_id));
+	llvm::Value* reg_64 = builder->CreateZExtOrTrunc(value, base_type, X64::reg_to_str.at(reg_info.base_id));
 
 	std::string base_reg_name = X64::reg_to_str.at(reg_info.base_id);
 
 	if (reg_info.size_bits == 64)
 	{
-		SetLLVMRegister(vexaToLLVMRegId[reg_info.base_id], value_64);
+		SetLLVMRegister(vexaToLLVMRegId[reg_info.base_id], reg_64);
 		return;
 	}
 
@@ -212,12 +232,32 @@ void VEXA::Lifter::WriteRegister(VEXA::reg_t reg, llvm::Value* value)
 		base_reg_name + "_" + mask_hex_str.str());
 
 	llvm::Value* shifted_new_val = builder->CreateShl(
-		value_64,
+		reg_64,
 		llvm::ConstantInt::get(base_type, reg_info.offset_bits),
 		"shifted_" + base_reg_name);
 
 	llvm::Value* final_value = builder->CreateOr(masked_old_val, shifted_new_val, base_reg_name);
 	SetLLVMRegister(vexaToLLVMRegId[reg_info.base_id], final_value);
+}
+
+void VEXA::Lifter::NormalizeIntSizes(llvm::Value*& a, llvm::Value*& b)
+{
+	llvm::Type* ta = a->getType();
+	llvm::Type* tb = b->getType();
+	if (!ta->isIntegerTy() || !tb->isIntegerTy()) return;
+
+	unsigned wa = ta->getIntegerBitWidth();
+	unsigned wb = tb->getIntegerBitWidth();
+
+	llvm::LLVMContext &ctx = builder->getContext();
+
+	if (wa < wb) {
+		llvm::Type* tgt = llvm::IntegerType::get(ctx, wb);
+		a = builder->CreateZExt(a, tgt, "zext_a");
+	} else if (wb < wa) {
+		llvm::Type* tgt = llvm::IntegerType::get(ctx, wa);
+		b = builder->CreateZExt(b, tgt, "zext_b");
+	}
 }
 
 void VEXA::Lifter::Optimize()
@@ -235,15 +275,11 @@ void VEXA::Lifter::Optimize()
 	llvm::ModuleAnalysisManager MAM;
 	llvm::PassBuilder PB;
 
-	static bool passes_registered = false;
-	if (!passes_registered) {
-		PB.registerModuleAnalyses(MAM);
-		PB.registerCGSCCAnalyses(CGAM);
-		PB.registerFunctionAnalyses(FAM);
-		PB.registerLoopAnalyses(LAM);
-		PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
-		passes_registered = true;
-	}
+	PB.registerModuleAnalyses(MAM);
+	PB.registerCGSCCAnalyses(CGAM);
+	PB.registerFunctionAnalyses(FAM);
+	PB.registerLoopAnalyses(LAM);
+	PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
 	llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(
 		llvm::OptimizationLevel::O3);
@@ -260,7 +296,6 @@ void VEXA::Lifter::PrintIR()
 std::string VEXA::Lifter::InstrToBrName(std::string text)
 {
 	std::string processed_text = text;
-
 	std::replace(processed_text.begin(), processed_text.end(), ' ', '_');
 
 	processed_text.erase(

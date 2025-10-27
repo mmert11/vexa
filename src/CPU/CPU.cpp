@@ -35,6 +35,7 @@ std::unordered_map<ZydisRegister, VEXA::reg_t> VEXA::X64::zydisToVexaReg = {
 
 };
 
+// TODO: implement private constructor for cloning 
 VEXA::X86CPU::X86CPU(std::shared_ptr<z3::context> c)
 {
 	context = c;

@@ -1,7 +1,4 @@
-﻿# rmdir build; cmake -B build -S . -DLLVM_DIR="D:\Libraries\llvm-project\build\lib\cmake\llvm" -DZ3_DIR="D:\\Libraries\\z3\\build"; cmake --build build --config Release --parallel; cmake --install build
-# cmake -B build -S . -DZ3_DIR="/opt/z3/lib/cmake/z3/";
-
-cmake_minimum_required(VERSION 3.8)
+﻿cmake_minimum_required(VERSION 3.8)
 project(VEXA)
 
 if(MSVC)
@@ -21,7 +18,8 @@ if (POLICY CMP0141)
   set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
 endif()
 
-set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}" CACHE PATH "Installation directory" FORCE)
+#set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}" CACHE PATH "Installation directory" FORCE)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(LLVM REQUIRED CONFIG)
 find_package(Z3 REQUIRED CONFIG)
@@ -36,9 +34,10 @@ add_library(VEXA STATIC
 "src/Value/Value.cpp" 
 "src/CPU/CPU.cpp"
 "src/Lifter/Lifter.cpp"
-"src/Lifter/Instructions.cpp"
-"src/Engine/Instructions.cpp"
-"src/Solver/Solver.cpp")
+"src/Lifter/X64Semantics.cpp"
+"src/Engine/X64Semantics.cpp"
+"src/Solver/Solver.cpp"
+"src/PathManager/PathManager.cpp")
 
 target_compile_definitions(VEXA PUBLIC ZYDIS_STATIC_BUILD)
 

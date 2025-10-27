@@ -1,0 +1,131 @@
+#include <VEXA/VEXA.h>
+
+#define VexaInstHandlerSrc(instName) VEXA::Value VEXA::Engine::instName(ZydisDisassembledInstruction& instruction)
+#define VexaLambdaWrapper(instName) [this](ZydisDisassembledInstruction& insn) { return instName(insn); }
+#define ReturnRIP(expr) CreateConcreteVar(expr, 64)
+
+void VEXA::Engine::InitHandlers()
+{
+	handlers = {
+		{ ZydisMnemonic::ZYDIS_MNEMONIC_MOV, VexaLambdaWrapper(mov)},
+		{ ZydisMnemonic::ZYDIS_MNEMONIC_ADD, VexaLambdaWrapper(add)},
+		{ ZydisMnemonic::ZYDIS_MNEMONIC_RET, VexaLambdaWrapper(ret)},
+		{ ZydisMnemonic::ZYDIS_MNEMONIC_CMP, VexaLambdaWrapper(cmp)},
+		{ ZydisMnemonic::ZYDIS_MNEMONIC_CMOVNZ, VexaLambdaWrapper(cmovnz)},
+		{ ZydisMnemonic::ZYDIS_MNEMONIC_JMP, VexaLambdaWrapper(jmp)},
+		{ ZydisMnemonic::ZYDIS_MNEMONIC_JNZ, VexaLambdaWrapper(jnz)}
+	};
+}
+
+VexaInstHandlerSrc(mov)
+{
+	TRY()
+	{
+		Value op2 = GetOperand(instruction.operands[1]);
+		SetOperand(instruction.operands[0], op2);
+		return ReturnRIP(ReadRegister(X64::RIP).as_int64() + instruction.info.length);
+	}
+	CATCH("MOV Handler")
+}
+
+VexaInstHandlerSrc(add)
+{
+	TRY()
+	{
+		Value op1 = GetOperand(instruction.operands[0]);
+		Value op2 = GetOperand(instruction.operands[1]);
+		Value resultAdd = op1 + op2;
+		SetOperand(instruction.operands[0], resultAdd);
+		return ReturnRIP(ReadRegister(X64::RIP).as_int64() + instruction.info.length);
+	}
+	CATCH("ADD Handler")
+}
+
+VexaInstHandlerSrc(cmp)
+{
+	TRY()
+	{
+		Value op1 = GetOperand(instruction.operands[0]);
+		Value op2 = GetOperand(instruction.operands[1]);
+		Value resultSub = op1 - op2;
+
+		Value zf_bool = resultSub == CreateConcreteVar(0, resultSub.expr().get_sort().bv_size());
+		Value zf_expr = z3::ite(zf_bool.expr(), context->bv_val(1, 1), context->bv_val(0, 1));
+		WriteRegister(X64::ZF, zf_expr);
+		return ReturnRIP(ReadRegister(X64::RIP).as_int64() + instruction.info.length);
+	}
+	CATCH("CMP Handler")
+	
+}
+
+VexaInstHandlerSrc(jmp)
+{
+	TRY()
+	{
+		Value op1 = GetOperand(instruction.operands[0]);
+
+		if (op1.type() == ValueType::SYMBOLIC)
+			throw std::runtime_error("Resolving symbolic destinations is not implemented yet");
+
+		// resolve relative address
+		uint64_t address = 0;
+		if (instruction.operands[0].imm.is_relative) // TODO: implement ResolveRelativeAddr(addr)
+			address = ReadRegister(X64::RIP).as_int64() + (unsigned int)instruction.info.length + op1.as_int64();
+		else
+			address = op1.as_int64();
+
+		return ReturnRIP(address);
+	}
+	CATCH("JMP Handler")
+}
+
+VexaInstHandlerSrc(jnz)
+{
+	TRY()
+	{
+		Value op1 = GetOperand(instruction.operands[0]);
+
+		if (op1.type() == ValueType::SYMBOLIC)
+			throw std::runtime_error("Resolving symbolic destinations is not implemented yet");
+
+		// resolve relative address
+		uint64_t address = 0;
+		if (instruction.operands[0].imm.is_relative)
+			address += ReadRegister(X64::RIP).as_int64() + (unsigned int)instruction.info.length + op1.as_int64();
+		else
+			address = op1.as_int64();
+
+		Value zf = ReadRegister(X64::ZF);
+		Value rip = z3::ite(zf.expr() != CreateConcreteVar(0, 1).expr(),
+			CreateConcreteVar(address, 64).expr(),
+			CreateConcreteVar(ReadRegister(X64::RIP).as_int64() + (unsigned int)instruction.info.length, 64).expr()
+		);
+		return rip;
+	}
+	CATCH("JNZ Handler")
+}
+
+VexaInstHandlerSrc(cmovnz)
+{
+	TRY()
+	{
+		Value op1 = GetOperand(instruction.operands[0]);
+		Value op2 = GetOperand(instruction.operands[1]);
+		Value zf = ReadRegister(X64::ZF);
+		Value newValue = z3::ite((zf == CreateConcreteVar(0, 1)).expr(), op2.expr(), op1.expr());
+		SetOperand(instruction.operands[0], newValue);
+
+		return ReturnRIP(ReadRegister(X64::RIP).as_int64() + instruction.info.length);
+	}
+	CATCH("CMOVNZ Handler")
+}
+
+VexaInstHandlerSrc(ret)
+{
+	TRY()
+	{
+		// TODO: need to implement stack
+		return ReturnRIP(ReadRegister(X64::RIP).as_int64() + instruction.info.length);
+	}
+	CATCH("RET Handler")
+}

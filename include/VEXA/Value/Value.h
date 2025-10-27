@@ -16,6 +16,7 @@ namespace VEXA
 		Value(z3::expr exp);
 		Value operator==(const Value& other) const;
 		Value operator+(const Value& other) const;
+		Value operator-(const Value& other) const;
 
 		z3::expr expr() const;
 		ValueType type();

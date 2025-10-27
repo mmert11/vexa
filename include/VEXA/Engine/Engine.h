@@ -1,10 +1,11 @@
 #pragma once
 #include "../SymbolicState/SymbolicState.h"
 #include "../Lifter/Lifter.h"
+#include "../PathManager/PathManager.h"
 
 #include <iostream>
 
-#define VexaInstHandler(instName) uint64_t instName(ZydisDisassembledInstruction& instruction)
+#define VexaInstHandler(instName) VEXA::Value instName(ZydisDisassembledInstruction& instruction)
 
 namespace VEXA
 {
@@ -40,11 +41,12 @@ namespace VEXA
 		/// (you need to set RIP before execution)
 		void Run();
 		// TODO: add brief
-		bool IsPath(ZydisDisassembledInstruction instruction);
+		bool IsPath(ZydisDisassembledInstruction& instruction);
 		std::shared_ptr<z3::context> GetContext();
 		void AddEventHook(EventHook callback_fn);
 		std::shared_ptr<SymbolicState> TakeSnapshot();
 		void RestoreSnapshot(std::shared_ptr<SymbolicState> newState);
+
 		/// @brief Writes the values comes from buffer at the specified address
 		/// @param addr Value representing the starting address in memory.
 		/// @param buffer Pointer that points to the values to be written
@@ -88,15 +90,14 @@ namespace VEXA
 		std::shared_ptr<z3::context> context;
 		std::shared_ptr<SymbolicState> state;
 		std::shared_ptr<Lifter> lifter;
+		std::shared_ptr<PathManager> path_manager;
 
 		void ProcessInstruction(ZydisDisassembledInstruction& instruction);
-
-		// operations
-		Value Add(Value a, Value b);
-		Value Sub(Value a, Value b);
-
+		
 		// instructions
 		void InitHandlers();
+		uint64_t HandlePath(ZydisDisassembledInstruction& instruction);
+		std::pair<VEXA::Value, VEXA::Value> ResolveSymbolicDest(VEXA::Value sym_dest);
 
 		VexaInstHandler(mov);
 		VexaInstHandler(add);
@@ -104,8 +105,9 @@ namespace VEXA
 		VexaInstHandler(cmp);
 		VexaInstHandler(cmovnz);
 		VexaInstHandler(jmp);
+		VexaInstHandler(jnz);
 
-		std::unordered_map<ZydisMnemonic, std::function<uint64_t(ZydisDisassembledInstruction&)>> handlers;
+		std::unordered_map<ZydisMnemonic, std::function<VEXA::Value(ZydisDisassembledInstruction&)>> handlers;
 
 		// events
 		std::vector<EventHook> event_hooks;

@@ -1,3 +1,4 @@
+#pragma once
 #include "../Memory/Memory.h"
 #include "../CPU/CPU.h"
 
