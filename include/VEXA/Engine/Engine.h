@@ -41,11 +41,13 @@ namespace VEXA
 		/// (you need to set RIP before execution)
 		void Run();
 		// TODO: add brief
-		bool IsPath(ZydisDisassembledInstruction& instruction);
+		bool IsBranching(ZydisDisassembledInstruction& instruction);
 		std::shared_ptr<z3::context> GetContext();
 		void AddEventHook(EventHook callback_fn);
 		std::shared_ptr<SymbolicState> TakeSnapshot();
 		void RestoreSnapshot(std::shared_ptr<SymbolicState> newState);
+		void PrintIR();
+		void PrintOptimizedIR();
 
 		/// @brief Writes the values comes from buffer at the specified address
 		/// @param addr Value representing the starting address in memory.
@@ -92,12 +94,15 @@ namespace VEXA
 		std::shared_ptr<Lifter> lifter;
 		std::shared_ptr<PathManager> path_manager;
 
+		std::string unoptimized_ir, optimized_ir;
+
 		void ProcessInstruction(ZydisDisassembledInstruction& instruction);
 		
 		// instructions
 		void InitHandlers();
 		uint64_t HandlePath(ZydisDisassembledInstruction& instruction);
 		std::pair<VEXA::Value, VEXA::Value> ResolveSymbolicDest(VEXA::Value sym_dest);
+		uint64_t ResolveRelativeAddress(ZydisDisassembledInstruction instruction, uint64_t offset);
 
 		VexaInstHandler(mov);
 		VexaInstHandler(add);

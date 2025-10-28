@@ -20,7 +20,7 @@ namespace VEXA
 		void LiftInstruction(ZydisDisassembledInstruction& instruction);
 		
 		void Optimize();
-		void PrintIR();
+		std::string GetIRString();
 
 		std::unordered_map<VEXA::reg_t, int> vexaToLLVMRegId = {
 			{X64::RAX, 0},
@@ -41,6 +41,7 @@ namespace VEXA
 		llvm::Value* GetLLVMRegister(int reg_id);
 		llvm::Value* GetCondition(ZydisDisassembledInstruction instruction);
 		llvm::BasicBlock* CreateCondBr(ZydisDisassembledInstruction instruction);
+		void CreateDirectJmp(ZydisDisassembledInstruction instruction);
 		
 	private:
 		std::string GetBlockNameFromInstr(ZydisDisassembledInstruction instruction, int id);
@@ -56,8 +57,6 @@ namespace VEXA
 		InstrHandler(cmp);
 		InstrHandler(cmovnz);
 		InstrHandler(ret);
-		InstrHandler(jmp);
-		InstrHandler(jnz);
 
 		VEXA::Engine* symEngine;
 		std::shared_ptr<llvm::LLVMContext> llvm_context;

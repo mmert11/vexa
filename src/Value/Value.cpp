@@ -54,11 +54,11 @@ Value Value::operator-(const Value& other) const
     return Value(left - right);
 }
 
-int64_t VEXA::Value::as_int64()
+uint64_t VEXA::Value::as_uint64()
 {
 	TRY()
 		if (this->type() == ValueType::CONCRETE)
-			return val->get_numeral_int64();
+			return val->get_numeral_uint64();
 		else
 			throw std::runtime_error("Cannot concretize a symbolic value!");
 	CATCH("Value error")

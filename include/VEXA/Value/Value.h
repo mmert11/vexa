@@ -20,7 +20,7 @@ namespace VEXA
 
 		z3::expr expr() const;
 		ValueType type();
-		int64_t as_int64();
+		uint64_t as_uint64();
 	private:
 		std::shared_ptr<z3::expr> val;
 	};

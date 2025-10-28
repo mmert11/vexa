@@ -29,7 +29,6 @@ std::unordered_map<ZydisRegister, VEXA::reg_t> VEXA::X64::zydisToVexaReg = {
 	{ZydisRegister::ZYDIS_REGISTER_DH, X64::DH},
 	{ZydisRegister::ZYDIS_REGISTER_DL, X64::DL},
 
-
 	// RFLAGS
 	{ZydisRegister::ZYDIS_REGISTER_RFLAGS, X64::RFLAGS}
 
@@ -79,11 +78,13 @@ void VEXA::X86CPU::Write(reg_t reg, Value value)
 		}
 		else if (info.size_bits < 64)
 		{
-			z3::expr lower_part = (info.offset_bits > 0) ?
-				base_reg_exp.extract(info.offset_bits - 1, 0) :
-				context->bv_val(0, 0);
 			z3::expr upper_part = base_reg_exp.extract(63, info.offset_bits + info.size_bits);
-			new_expr = z3::concat(upper_part, z3::concat(value.expr(), lower_part));
+            if (info.offset_bits > 0) {
+                z3::expr lower_part = base_reg_exp.extract(info.offset_bits - 1, 0);
+                new_expr = z3::concat(upper_part, z3::concat(value.expr(), lower_part));
+            } else {
+                new_expr = z3::concat(upper_part, value.expr());
+            }
 		}
 		else {
 			new_expr = value.expr();

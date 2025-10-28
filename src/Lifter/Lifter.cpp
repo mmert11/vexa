@@ -111,6 +111,16 @@ llvm::BasicBlock* VEXA::Lifter::CreateCondBr(ZydisDisassembledInstruction instru
 	return false_bb;
 }
 
+// create unconditional jump
+void VEXA::Lifter::CreateDirectJmp(ZydisDisassembledInstruction instruction)
+{
+	std::string bb_name = GetBlockNameFromInstr(instruction, vip);
+	llvm::BasicBlock* jump_block = llvm::BasicBlock::Create(*llvm_context, bb_name, func);
+	
+	builder->CreateBr(jump_block);
+	builder->SetInsertPoint(jump_block);
+}
+
 llvm::Value* VEXA::Lifter::GetLLVMRegister(int reg_id)
 {
 	return registers.at(reg_id).get();
@@ -171,7 +181,7 @@ llvm::Value* VEXA::Lifter::ReadRegister(VEXA::reg_t reg)
 	{
 		// if the value could be resolved by symex engine, use constant value directly
 		llvm::Type* target_type = llvm::Type::getIntNTy(builder->getContext(), reg_info.size_bits);
-		return llvm::ConstantInt::get(target_type, inEngineVal.as_int64());
+		return llvm::ConstantInt::get(target_type, inEngineVal.as_uint64());
 	}
 	else
 	{
@@ -288,9 +298,12 @@ void VEXA::Lifter::Optimize()
 	CATCH("Lifter error")
 }
 
-void VEXA::Lifter::PrintIR()
+std::string VEXA::Lifter::GetIRString()
 {
-	module->print(llvm::outs(), nullptr);
+    std::string buf;
+    llvm::raw_string_ostream rso(buf);
+    module->print(rso, nullptr);
+    return buf;
 }
 
 std::string VEXA::Lifter::InstrToBrName(std::string text)
