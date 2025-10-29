@@ -80,26 +80,31 @@ void VEXA::Lifter::LiftInstruction(ZydisDisassembledInstruction& instruction)
 
 llvm::Value* VEXA::Lifter::GetCondition(ZydisDisassembledInstruction instruction)
 {
+	TRY()
 	switch (instruction.info.mnemonic)
 	{
+	case ZYDIS_MNEMONIC_CMOVNZ:
 	case ZYDIS_MNEMONIC_JNZ:
 		return builder->CreateICmpEQ(ReadRegister(X64::ZF), llvm::ConstantInt::get(builder->getInt1Ty(), 0));
 	default:
-		throw std::runtime_error("Unimplemented conditional instruction");
+		throw std::runtime_error("Unimplemented conditional instruction: " + (std::string)ZydisMnemonicGetString(instruction.info.mnemonic));
 	}
+	CATCH("Lifter error")
 }
 
 // get condition, create true and false basic blocks
 // set insert point on true block and return the false block
 llvm::BasicBlock* VEXA::Lifter::CreateCondBr(ZydisDisassembledInstruction instruction)
 {
-	llvm::Value* cond = GetCondition(instruction);
+	TRY()
 	std::string bb_name = GetBlockNameFromInstr(instruction, vip);
 	llvm::BasicBlock* cond_bb = llvm::BasicBlock::Create(*llvm_context,
 		bb_name, func);
 
 	builder->CreateBr(cond_bb);
 	builder->SetInsertPoint(cond_bb);
+
+	llvm::Value* cond = GetCondition(instruction);
 
 	llvm::BasicBlock* true_bb = llvm::BasicBlock::Create(*llvm_context,
 		"cond_true", func);
@@ -109,6 +114,32 @@ llvm::BasicBlock* VEXA::Lifter::CreateCondBr(ZydisDisassembledInstruction instru
 	builder->CreateCondBr(cond, true_bb, false_bb);
 	builder->SetInsertPoint(true_bb);
 	return false_bb;
+	CATCH("Lifter error")
+}
+
+llvm::BasicBlock* VEXA::Lifter::CreateIndirectJmp
+	(ZydisDisassembledInstruction instruction, VEXA::Value true_dest, VEXA::Value false_dest)
+{
+	if (instruction.info.mnemonic == ZYDIS_MNEMONIC_JMP)
+	{
+		std::string bb_name = GetBlockNameFromInstr(instruction, vip);
+		llvm::BasicBlock* cond_bb = llvm::BasicBlock::Create(*llvm_context,
+			bb_name, func);
+
+		builder->CreateBr(cond_bb);
+		builder->SetInsertPoint(cond_bb);
+
+		llvm::BasicBlock* true_bb = llvm::BasicBlock::Create(*llvm_context,
+			"cond_true", func);
+		llvm::BasicBlock* false_bb = llvm::BasicBlock::Create(*llvm_context,
+			"cond_false", func);
+
+		llvm::Value* operand = GetOperand(instruction.operands[0]);
+		llvm::Value* cond = builder->CreateICmpEQ(operand, llvm::ConstantInt::get(builder->getInt64Ty(), true_dest.as_uint64()), operand->getName());
+		builder->CreateCondBr(cond, true_bb, false_bb);
+		builder->SetInsertPoint(true_bb);
+		return false_bb;
+	}
 }
 
 // create unconditional jump

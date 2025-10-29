@@ -43,7 +43,7 @@ VEXA::X86CPU::X86CPU(std::shared_ptr<z3::context> c)
 	for (reg_t r = 0; r < X64::NB_REGS; r++) {
 		if (X64::reg_info.at(r).size_bits == 64) // only 64 bit registers
 			registers[r] = std::make_shared<Value>(
-				Value(context->bv_val(0, context->bv_sort(64)))
+				Value(context->bv_const(X64::reg_to_str.at(r).c_str(), context->bv_sort(64)))
 			);
 	}
 }
@@ -102,7 +102,8 @@ VEXA::Value VEXA::X86CPU::Read(reg_t reg)
 		RegInfo info = X64::reg_info.at(reg);
 		z3::expr base_reg_exp = registers.at(info.base_id)->expr();
 
-		unsigned int high_bit = info.size_bits + info.offset_bits - 1;
+		unsigned int bv_size = base_reg_exp.get_sort().bv_size();
+		unsigned int high_bit = std::min(info.offset_bits + info.size_bits - 1, (int)(bv_size - 1));
 		unsigned int low_bit = info.offset_bits;
 		z3::expr read_expr = base_reg_exp.extract(high_bit, low_bit);
 

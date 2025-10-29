@@ -34,6 +34,7 @@ VexaInstHandlerSrc(add)
 	{
 		Value op1 = GetOperand(instruction.operands[0]);
 		Value op2 = GetOperand(instruction.operands[1]);
+		EqualizeSizes(op1, op2);
 		Value resultAdd = op1 + op2;
 		SetOperand(instruction.operands[0], resultAdd);
 		return Const64(ReadRegister(X64::RIP).as_uint64() + instruction.info.length);
@@ -47,6 +48,7 @@ VexaInstHandlerSrc(cmp)
 	{
 		Value op1 = GetOperand(instruction.operands[0]);
 		Value op2 = GetOperand(instruction.operands[1]);
+		EqualizeSizes(op1, op2);
 		Value resultSub = op1 - op2;
 
 		Value zf_bool = resultSub == CreateConcreteVar(0, resultSub.expr().get_sort().bv_size());
@@ -63,9 +65,8 @@ VexaInstHandlerSrc(jmp)
 	TRY()
 	{
 		Value op1 = GetOperand(instruction.operands[0]);
-
 		if (op1.type() == ValueType::SYMBOLIC)
-			throw std::runtime_error("Resolving symbolic destinations is not implemented yet");
+			return op1;			
 
 		// resolve relative address
 		uint64_t address = instruction.operands[0].imm.is_relative ?
@@ -84,7 +85,7 @@ VexaInstHandlerSrc(jnz)
 		Value op1 = GetOperand(instruction.operands[0]);
 
 		if (op1.type() == ValueType::SYMBOLIC)
-			throw std::runtime_error("Resolving symbolic destinations is not implemented yet");
+			throw std::runtime_error("This shouldnt happen..");
 
 		// resolve relative address
 		uint64_t address = instruction.operands[0].imm.is_relative ?
@@ -108,6 +109,7 @@ VexaInstHandlerSrc(cmovnz)
 		Value op1 = GetOperand(instruction.operands[0]);
 		Value op2 = GetOperand(instruction.operands[1]);
 		Value zf = ReadRegister(X64::ZF);
+		EqualizeSizes(op1, op2);
 		Value newValue = z3::ite((zf == CreateConcreteVar(0, 1)).expr(), op2.expr(), op1.expr());
 		SetOperand(instruction.operands[0], newValue);
 
@@ -121,7 +123,7 @@ VexaInstHandlerSrc(ret)
 	TRY()
 	{
 		// TODO: need to implement stack
-		return Const64(ReadRegister(X64::RIP).as_uint64() + instruction.info.length);
+		return Const64(0);//Const64(ReadRegister(X64::RIP).as_uint64() + instruction.info.length);
 	}
 	CATCH("RET Handler")
 }

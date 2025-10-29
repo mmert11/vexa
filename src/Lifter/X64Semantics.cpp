@@ -41,7 +41,7 @@ LifterHandler(cmp)
 	llvm::Value* op1 = GetOperand(instr.operands[0]);
 	llvm::Value* op2 = GetOperand(instr.operands[1]);
     NormalizeIntSizes(op1, op2);
-    llvm::Value* zf = builder->CreateICmpEQ(op1, op2);
+    llvm::Value* zf = builder->CreateICmpEQ(op1, op2, "zf");
     WriteRegister(X64::ZF, zf);
 }
 
@@ -53,6 +53,6 @@ LifterHandler(cmovnz)
     llvm::Value* zf = ReadRegister(X64::ZF);
 	llvm::Value* cond = GetCondition(instr);
 
-	llvm::Value* valueToSet = builder->CreateSelect(cond, src, dest);
+	llvm::Value* valueToSet = builder->CreateSelect(cond, src, dest, dest->getName());
 	SetOperand(instr.operands[0], valueToSet);
 }

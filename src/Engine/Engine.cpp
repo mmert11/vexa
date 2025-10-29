@@ -116,15 +116,16 @@ void VEXA::Engine::ProcessInstruction(ZydisDisassembledInstruction &instruction)
 			WriteRegister(X64::RIP, CreateConcreteVar(nextRip, 64));
 		}
 		else
+		{
 			throw std::runtime_error(std::string("Unimplemented instruction: ") + ZydisMnemonicGetString(instruction.info.mnemonic));
 		}
+	}
 	CATCH("Engine error")
 }
 
 uint64_t VEXA::Engine::HandlePath(ZydisDisassembledInstruction &instruction)
 {
-	auto handler = handlers.find(instruction.info.mnemonic);
-	Value dest = handler->second(instruction);
+	Value dest = handlers.at(instruction.info.mnemonic)(instruction);
 
 	if (dest.type() == ValueType::SYMBOLIC)
 	{
@@ -133,15 +134,19 @@ uint64_t VEXA::Engine::HandlePath(ZydisDisassembledInstruction &instruction)
 		if (_then.type() == ValueType::SYMBOLIC || _else.type() == ValueType::SYMBOLIC)
 			throw std::runtime_error("Couldnt resolve symbolic destinations!");
 
+		llvm::BasicBlock* block = (instruction.info.mnemonic == ZYDIS_MNEMONIC_JMP || 
+								   instruction.info.mnemonic == ZYDIS_MNEMONIC_RET) ?
+			lifter->CreateIndirectJmp(instruction, _then, _else) :
+			lifter->CreateCondBr(instruction);
+
 		// TODO: put these into a function
 		Path p;
 		p.snapshot = TakeSnapshot();
 		p.snapshot->cpu->Write(X64::RIP, _else);
 
 		p.registers = lifter->registers;
-		p.block = lifter->CreateCondBr(instruction);
+		p.block = block;
 		path_manager->paths.push(p);
-
 		return _then.as_uint64();
 	}
 	else
@@ -211,7 +216,6 @@ void VEXA::Engine::SetOperand(ZydisDecodedOperand op, Value value)
 	}
 }
 
-// TODO: we can think of a better way to implement this
 bool VEXA::Engine::IsBranching(ZydisDisassembledInstruction &instruction)
 {
 	// TODO: add ret here

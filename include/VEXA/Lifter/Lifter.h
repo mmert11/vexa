@@ -41,6 +41,7 @@ namespace VEXA
 		llvm::Value* GetLLVMRegister(int reg_id);
 		llvm::Value* GetCondition(ZydisDisassembledInstruction instruction);
 		llvm::BasicBlock* CreateCondBr(ZydisDisassembledInstruction instruction);
+		llvm::BasicBlock* CreateIndirectJmp(ZydisDisassembledInstruction instruction, VEXA::Value true_dest, VEXA::Value false_dest);
 		void CreateDirectJmp(ZydisDisassembledInstruction instruction);
 		
 	private:

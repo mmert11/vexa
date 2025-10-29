@@ -1,4 +1,3 @@
-#pragma once
 #include <z3++.h>
 
 namespace VEXA
@@ -24,4 +23,6 @@ namespace VEXA
 	private:
 		std::shared_ptr<z3::expr> val;
 	};
+
+	void EqualizeSizes(VEXA::Value& vx, VEXA::Value& vy);
 }
