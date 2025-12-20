@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.8)
 project(VEXA)
 
 if(MSVC)
@@ -6,19 +6,13 @@ if(MSVC)
     set(CMAKE_SUPPRESS_REGENERATION true)
     set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE "")
     set(CMAKE_MSVC_WARNING_LEVEL 0)
-add_compile_options(/EHsc)
+    add_compile_options(/EHsc)
 endif()
 
 if(NOT MSVC)
     add_compile_options(-Wall -Wextra -Wno-unused-variable -Wno-unused-parameter)
-endif()
+endif() 
 
-if (POLICY CMP0141)
-  cmake_policy(SET CMP0141 NEW)
-  set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "$<IF:$<AND:$<C_COMPILER_ID:MSVC>,$<CXX_COMPILER_ID:MSVC>>,$<$<CONFIG:Debug,RelWithDebInfo>:EditAndContinue>,$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>>")
-endif()
-
-#set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}" CACHE PATH "Installation directory" FORCE)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(LLVM REQUIRED CONFIG)
@@ -26,20 +20,17 @@ find_package(Z3 REQUIRED CONFIG)
 find_package(ZYDIS REQUIRED CONFIG)
 
 add_library(VEXA STATIC
-"include/VEXA/VEXA.h"
-"src/VEXA.cpp" 
-"src/Memory/Memory.cpp"
-"src/SymbolicState/SymbolicState.cpp"
-"src/Engine/Engine.cpp"
-"src/Value/Value.cpp" 
-"src/CPU/CPU.cpp"
-"src/Lifter/Lifter.cpp"
-"src/Lifter/X64Semantics.cpp"
-"src/Engine/X64Semantics.cpp"
-"src/Solver/Solver.cpp"
-"src/PathManager/PathManager.cpp")
-
-target_compile_definitions(VEXA PUBLIC ZYDIS_STATIC_BUILD)
+    "src/vexa.cpp"
+    "src/context.cpp"
+    "src/engine/engine.cpp"
+    "src/ir/builder.cpp"
+    "src/memory/memory.cpp"
+    "src/arch/arch.cpp"
+    "src/arch/x64/cpu.cpp"
+    "src/arch/x64/semantics.cpp"
+    "src/value/value.cpp"
+    "src/symex/symex.cpp"
+)
 
 llvm_map_components_to_libnames(LLVM_LIBS
 core
@@ -57,6 +48,7 @@ add_definitions(${LLVM_DEFINITIONS})
 target_include_directories(VEXA PRIVATE ${Z3_CXX_INCLUDE_DIRS})
 target_link_libraries(VEXA PRIVATE ${Z3_LIBRARIES})
 
+target_compile_definitions(VEXA PUBLIC ZYDIS_STATIC_BUILD)
 set_property(TARGET VEXA PROPERTY CXX_STANDARD 20)
 
 target_include_directories(VEXA PUBLIC
@@ -72,7 +64,7 @@ install(TARGETS VEXA
 )
 
 install(DIRECTORY
-    include/VEXA
+    include/vexa
     DESTINATION include/
 )
 
