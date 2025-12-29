@@ -24,6 +24,7 @@ add_library(VEXA STATIC
     "src/context.cpp"
     "src/engine/engine.cpp"
     "src/ir/builder.cpp"
+    "src/ir/recompiler.cpp"
     "src/memory/memory.cpp"
     "src/arch/arch.cpp"
     "src/arch/x64/cpu.cpp"
@@ -33,12 +34,18 @@ add_library(VEXA STATIC
 )
 
 llvm_map_components_to_libnames(LLVM_LIBS
-core
-support
-irreader
-passes
-transformutils
-ipo
+    core
+    support
+    irreader
+    passes
+    transformutils
+    ipo
+    X86CodeGen
+    X86Desc
+    X86Info
+    MC
+    Target
+    Object
 )
 
 target_link_libraries(VEXA PUBLIC ${LLVM_LIBS})

@@ -28,6 +28,14 @@ vexa::value vexa::ir::builder::symvar(int param_idx, std::string name)
     return val;
 }
 
+int vexa::ir::builder::get_instr_count()
+{
+    int count = 0;
+    for (const llvm::BasicBlock &BB : *function)
+        count += BB.size();
+    return count;
+}
+
 vexa::value vexa::ir::builder::get_const_int(uint64_t value, int bit_size)
 {
     llvm::Value* v = getIntN(bit_size, value);
@@ -115,8 +123,10 @@ vexa::value vexa::ir::builder::cmpeq(vexa::value lhs, vexa::value rhs, std::stri
 vexa::value vexa::ir::builder::select(vexa::value cond, vexa::value lhs, vexa::value rhs, std::string name)
 {
     normalize(lhs, rhs);
-    llvm::Value* lv = CreateSelect(cond.as_llvm(), lhs.as_llvm(), rhs.as_llvm(), name);
+    if (cond.size() > 1)
+        THROW("condition must be 1-bit integer");
 
+    llvm::Value* lv = CreateSelect(cond.as_llvm(), lhs.as_llvm(), rhs.as_llvm(), name);
     z3::expr cond_expr = symex->get(cond.as_llvm());
     z3::expr cond_bool = cond_expr.is_bool() ? cond_expr : (cond_expr == symex->concrete(1, cond.size()));
     z3::expr zv = z3::ite(cond_bool, symex->get(lhs.as_llvm()), symex->get(rhs.as_llvm()));
@@ -170,6 +180,21 @@ vexa::value vexa::ir::builder::bor(vexa::value lhs, vexa::value rhs, std::string
     normalize(lhs, rhs);
     llvm::Value* v = CreateOr(lhs.as_llvm(), rhs.as_llvm(), name);
     symex->set(v, symex->get(lhs.as_llvm()) | symex->get(rhs.as_llvm()));
+    return vexa::value(v, DL);
+}
+
+vexa::value vexa::ir::builder::bxor(vexa::value lhs, vexa::value rhs, std::string name)
+{
+    normalize(lhs, rhs);
+    llvm::Value* v = CreateXor(lhs.as_llvm(), rhs.as_llvm(), name);
+    symex->set(v, symex->get(lhs.as_llvm()) ^ symex->get(rhs.as_llvm()));
+    return vexa::value(v, DL);
+}
+
+vexa::value vexa::ir::builder::bnot(vexa::value lhs, std::string name)
+{
+    llvm::Value* v = CreateNot(lhs.as_llvm(), name);
+    symex->set(v, ~symex->get(lhs.as_llvm()));
     return vexa::value(v, DL);
 }
 

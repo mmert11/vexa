@@ -9,7 +9,9 @@ namespace vexa
 {
     struct mem_state
     {
-    public: z3::expr mem;
+    public:
+        z3::expr mem;
+        std::unordered_map<uint64_t, uint8_t> concrete_cache;
     };
 
     class memory
@@ -26,7 +28,6 @@ namespace vexa
     private:
         std::shared_ptr<vexa::context> context;
         std::shared_ptr<z3::expr> mem;
-
-        //std::map<llvm::Value*, z3::expr> vars;
+        std::unordered_map<uint64_t, uint8_t> concrete_cache;
     };
 }

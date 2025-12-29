@@ -8,6 +8,7 @@
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/OptimizationLevel.h>
 #include <llvm/Analysis/ConstantFolding.h>
+#include <llvm/IR/InstIterator.h>
 
 #include "../context.hpp"
 #include "../value/value.hpp"
@@ -22,20 +23,27 @@ namespace vexa
         public:
             builder(std::shared_ptr<vexa::context> _context, std::shared_ptr<vexa::symex> _symex);
 
+            // utils
             llvm::Type* get_int_ty(unsigned int size);
             vexa::value symvar(int param_idx, std::string name);
+            int get_instr_count();
+            void optimize();
+
             llvm::Function* create_function(std::string name, std::vector<llvm::Type*> args);
             llvm::Function* get_function();
             void set_function(llvm::Function* _function);
 
+            // basic block and branching
             llvm::BasicBlock* basic_block(std::string name);
             llvm::BasicBlock* basic_block(std::string name, llvm::Function* function);
             void set_ip(llvm::BasicBlock* bb);
             void jump(llvm::BasicBlock* bb);
             void jump_if(vexa::value cond, llvm::BasicBlock* then_bb, llvm::BasicBlock* else_bb);
 
+            // arithmetic
             vexa::value get_const_int(uint64_t value, int bit_size);
             vexa::value resize(vexa::value value, unsigned int size);
+            void normalize(vexa::value& lhs, vexa::value& rhs);
 
             vexa::value add(vexa::value lhs, vexa::value rhs, std::string name);
             vexa::value sub(vexa::value lhs, vexa::value rhs, std::string name);
@@ -48,11 +56,10 @@ namespace vexa
             vexa::value bshl(vexa::value lhs, vexa::value rhs, std::string name);
             vexa::value bshr(vexa::value lhs, vexa::value rhs, std::string name);
             vexa::value bor(vexa::value lhs, vexa::value rhs, std::string name);
+            vexa::value bxor(vexa::value lhs, vexa::value rhs, std::string name);
+            vexa::value bnot(vexa::value lhs, std::string name);
 
             void ret(llvm::Value* v);
-            // utils
-            void normalize(vexa::value& lhs, vexa::value& rhs);
-            void optimize();
         private:
             std::shared_ptr<vexa::context> context;
             std::shared_ptr<vexa::symex> symex;

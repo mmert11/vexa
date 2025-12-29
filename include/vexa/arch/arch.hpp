@@ -54,6 +54,7 @@ namespace vexa
         virtual void run() = 0;
         virtual void write_register(reg_t reg, vexa::value value) = 0;
         virtual vexa::value read_register(reg_t reg) = 0;
+        int lifted_count;
 
         snapshot take_snapshot();
         void restore_snapshot(snapshot ss);

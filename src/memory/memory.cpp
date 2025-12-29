@@ -7,26 +7,31 @@ vexa::memory::memory(std::shared_ptr<vexa::context> _context) : context(_context
     // initialize memory as z3::array(64, 8)
     z3::sort mem_sort = context->z3_context->array_sort(context->z3_context->bv_sort(64), context->z3_context->bv_sort(8));
     mem = std::make_shared<z3::expr>(context->z3_context->constant("memory", mem_sort));
-
     CATCH()
 }
 
-void vexa::memory::write(z3::expr addr, z3::expr val)
+void vexa::memory::write(z3::expr addr, z3::expr val) 
 {
-    TRY()    
-    z3::expr addr_expr = addr;
-    z3::expr val_expr = val;
-    int size = val_expr.get_sort().bv_size();
+    TRY()
+    int size = val.get_sort().bv_size();
+    bool addr_is_concrete = addr.is_numeral();
+    bool val_is_concrete = val.is_numeral();
 
-    if (size <= 0)
-        THROW("size must be greater than zero");
-
-    // write value byte by byte
     for (int i = 0; i < size / 8; i++)
     {
-        z3::expr target_byte = val_expr.extract(i * 8 + 7, i * 8); // extract(high bit, low bit) (7,0), (13,8) etc.
-        z3::expr target_addr = addr_expr + context->z3_context->bv_val(i, 64); // calculate the address for each byte
-        *mem = z3::store(*mem, target_addr, target_byte); // write
+        z3::expr target_byte = val.extract(i * 8 + 7, i * 8);
+        z3::expr target_addr = addr + context->z3_context->bv_val(i, 64);
+        
+        // write into z3 array
+        *mem = z3::store(*mem, target_addr, target_byte);
+
+        // if the address and value is concrete,
+        // cache the value to improve performance
+        if (addr_is_concrete && val_is_concrete) 
+            concrete_cache[addr.as_uint64() + i] = 
+                static_cast<uint8_t>(target_byte.simplify().as_uint64());
+        else if (addr_is_concrete) concrete_cache.erase(addr.as_uint64() + i);
+        else concrete_cache.clear();
     }
     CATCH()
 }
@@ -34,19 +39,21 @@ void vexa::memory::write(z3::expr addr, z3::expr val)
 z3::expr vexa::memory::read(z3::expr addr, int size)
 {
     TRY()
-    if (size <= 0)
-        THROW("size must be greater than zero");
-
-    z3::expr addr_expr = addr;
-    z3::expr val_expr = z3::select(*mem, addr_expr + (size / 8) - 1); // read the last byte
-
-    // read and combine the rest if size is greater than 8 bits
-    for (int i = (size / 8) - 2; i >= 0; i--)
+    
+    if (addr.is_numeral() && size == 8) 
     {
-        z3::expr target_addr = addr_expr + context->z3_context->bv_val(i, 64); // calculate the address for each byte
-        z3::expr read_val = z3::select(*mem, target_addr); // read byte
-        val_expr = z3::concat(val_expr, read_val); // combine the bytes
+        uint64_t raw_addr = addr.as_uint64();
+        auto it = concrete_cache.find(raw_addr);
+        if (it != concrete_cache.end()) {
+            return context->z3_context->bv_val(it->second, 8).simplify();
+        }
     }
+
+    if (size == 8) return z3::select(*mem, addr).simplify();
+
+    z3::expr val_expr = z3::select(*mem, addr + (size / 8) - 1);
+    for (int i = (size / 8) - 2; i >= 0; i--)
+        val_expr = z3::concat(val_expr, z3::select(*mem, addr + context->z3_context->bv_val(i, 64)));
 
     return val_expr.simplify();
     CATCH()
@@ -54,10 +61,11 @@ z3::expr vexa::memory::read(z3::expr addr, int size)
 
 vexa::mem_state vexa::memory::take_snapshot()
 {
-    return mem_state{*mem};
+    return mem_state{*mem, concrete_cache};
 }
 
 void vexa::memory::restore_snapshot(vexa::mem_state ss)
 {
     *mem = ss.mem;
+    concrete_cache = ss.concrete_cache;
 }

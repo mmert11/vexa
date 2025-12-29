@@ -11,11 +11,23 @@ vexa::x64::cpu64::cpu64(
     TRY()
 
     const std::map<reg_t, int> llvm_register_table = {
-        {x64::RAX, 0},
-        {x64::RBX, 1},
-        {x64::RCX, 2},
-        {x64::RDX, 3},
-        {x64::RFLAGS, 4}
+        { x64::RAX, 0 },
+        { x64::RBX, 1 },
+        { x64::RCX, 2 },
+        { x64::RDX, 3 },
+        { x64::RSI, 4 },
+        { x64::RDI, 5 },
+        { x64::RBP, 6 },
+        { x64::RSP, 7 },
+        { x64::R8,  8 },
+        { x64::R9,  9 },
+        { x64::R10, 10 },
+        { x64::R11, 11 },
+        { x64::R12, 12 },
+        { x64::R13, 13 },
+        { x64::R14, 14 },
+        { x64::R15, 15 },
+        { x64::RFLAGS, 16 }
     };
 
     llvm::Type *i64_t = builder->get_int_ty(64);
@@ -103,6 +115,7 @@ vexa::value vexa::x64::cpu64::lift(ZydisDisassembledInstruction instruction)
     vexa::value new_ip = handler->second(instruction);
     write_register(x64::RIP, new_ip);
 
+    lifted_count++;
     return new_ip;
     CATCH()
 }
@@ -201,9 +214,10 @@ std::pair<vexa::value, vexa::value> vexa::x64::cpu64::resolve_indirect_jmp(vexa:
 {
     if (llvm::SelectInst* sel = llvm::dyn_cast<llvm::SelectInst>(v.as_llvm())) 
     {
+        const llvm::DataLayout* DL = &context->llvm_module->getDataLayout();
         auto rs = std::pair<vexa::value, vexa::value>(
-            vexa::value(sel->getTrueValue(), &context->llvm_module->getDataLayout()),
-            vexa::value(sel->getFalseValue(), &context->llvm_module->getDataLayout())
+            vexa::value(sel->getTrueValue(), DL),
+            vexa::value(sel->getFalseValue(), DL)
         );
         
         if (rs.first.is_symbolic() || rs.second.is_symbolic())
@@ -213,7 +227,7 @@ std::pair<vexa::value, vexa::value> vexa::x64::cpu64::resolve_indirect_jmp(vexa:
     }
 
 fail:
-    THROW("failed to resolve indirect jump destinations");
+    THROW("failed to resolve indirect jump");
 }
 
 bool vexa::x64::disassemble(std::vector<uint8_t> data, uint64_t &address, ZydisDisassembledInstruction &instruction)

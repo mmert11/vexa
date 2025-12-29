@@ -1,4 +1,5 @@
 #include <vexa/vexa.h>
+#include <chrono>
 
 vexa::engine::engine(vexa::arch arch) : _arch(arch)
 {
@@ -20,12 +21,17 @@ vexa::engine::engine(vexa::arch arch) : _arch(arch)
 
 void vexa::engine::run()
 {
+    auto start = std::chrono::high_resolution_clock::now();
     cpu->run();
-    ir.clear();
+    auto end = std::chrono::high_resolution_clock::now();
+    time = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
+    ir.clear();
     llvm::raw_string_ostream rso(ir);
     context->llvm_module->print(rso, nullptr);
     rso.flush();
+
+    instr_count = builder->get_instr_count();
 }
 
 void vexa::engine::optimize()
@@ -39,9 +45,35 @@ void vexa::engine::optimize()
 }
 
 void vexa::engine::print_ir()
-{
-    std::cout << ir << std::endl;
+{    
+    const size_t asm_count      = cpu->lifted_count;
+    const size_t ir_before_opt  = instr_count;
+    const size_t ir_after_opt   = builder->get_instr_count();
+
+    double expansion =
+        asm_count ? double(ir_before_opt) / double(asm_count) : 0.0;
+
+    double reduction =
+        ir_before_opt ? 100.0 * (1.0 - double(ir_after_opt) / double(ir_before_opt)) : 0.0;
+
+    std::cout << "\n────────────────────────────────────────\n\n";
+    std::cout << ir << "\n";
+
+    std::cout << "lifted          : " << std::dec << asm_count
+              << " asm-insts in " << time << "\n";
+
+    std::cout << "ir generated    : " << ir_before_opt
+              << " ir-insts (×" << std::fixed << std::setprecision(2)
+              << expansion << " expansion)\n";
+
+    std::cout << "optimized into  : " << ir_after_opt
+              << " ir-insts (−" << std::fixed << std::setprecision(2)
+              << reduction << "%)\n";
+
+    std::cout << "\n────────────────────────────────────────\n";
+    std::cout << "VEXA · LLVM IR Lifter / Optimizer © github.com/mmert11\n\n";
 }
+
 
 void vexa::engine::write_memory(uint64_t address, std::vector<uint8_t> buffer)
 {
@@ -50,6 +82,11 @@ void vexa::engine::write_memory(uint64_t address, std::vector<uint8_t> buffer)
         auto addr = symex->concrete(address + i, 64);
         memory->write(addr, symex->concrete(buffer[i], 8));
     }
+}
+
+std::shared_ptr<vexa::context> vexa::engine::get_context()
+{
+    return context;
 }
 
 std::shared_ptr<vexa::ir::builder> vexa::engine::get_builder()

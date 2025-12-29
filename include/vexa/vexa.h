@@ -1,5 +1,7 @@
 #pragma once
 #include "engine/engine.hpp"
+#include "ir/recompiler.hpp"
+
 #include <iostream>
 #include <filesystem>
 #include <sstream>

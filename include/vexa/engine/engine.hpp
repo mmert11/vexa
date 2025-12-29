@@ -15,6 +15,7 @@ namespace vexa
     {
     public:
         engine(vexa::arch arch = arch::x64);
+        std::shared_ptr<vexa::context> get_context();
         std::shared_ptr<ir::builder> get_builder();
         std::shared_ptr<vexa::memory> get_memory();
         std::shared_ptr<vexa::symex> get_symex();
@@ -34,5 +35,7 @@ namespace vexa
         std::shared_ptr<vexa::symex> symex;
 
         std::string ir;
+        std::chrono::milliseconds time;
+        int instr_count;
     };
 }
