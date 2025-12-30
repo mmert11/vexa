@@ -18,7 +18,7 @@ namespace vexa::ir
     {
     public:
         recompiler(std::shared_ptr<vexa::context> c);
-        std::vector<uint8_t> recompile(vexa::arch arch);
+        std::vector<uint8_t> recompile(vexa::arch arch, bool optimize = true);
     private:
         std::shared_ptr<vexa::context> context;
     };

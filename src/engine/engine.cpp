@@ -71,7 +71,7 @@ void vexa::engine::print_ir()
               << reduction << "%)\n";
 
     std::cout << "\n────────────────────────────────────────\n";
-    std::cout << "VEXA · LLVM IR Lifter / Optimizer © github.com/mmert11\n\n";
+    std::cout << "VEXA · LLVM IR Lifter / Deobfuscator © github.com/mmert11\n\n";
 }
 
 

@@ -79,44 +79,52 @@ void vexa::ir::builder::jump_if(vexa::value cond, llvm::BasicBlock* then_bb, llv
     CreateCondBr(cond.as_llvm(), then_bb, else_bb);
 }
 
-vexa::value vexa::ir::builder::resize(vexa::value value, unsigned int size)
+vexa::value vexa::ir::builder::resize(vexa::value value, unsigned int size, bool sign_extend)
 {
     if (size == value.size())
         return value;
 
     llvm::Value* lvalue = value.as_llvm();
-    llvm::Value* v = CreateZExtOrTrunc(lvalue, getIntNTy(size), lvalue->getName().str());
+    llvm::Value* v = sign_extend ?
+                    CreateSExtOrTrunc(lvalue, getIntNTy(size), lvalue->getName().str()) :
+                    CreateZExtOrTrunc(lvalue, getIntNTy(size), lvalue->getName().str());
     vexa::value new_value(v, DL);
 
+    // extend or truncate in z3
     z3::expr zvalue = symex->get(lvalue);
     symex->set(
         v,
         value.size() < size
-            ? z3::zext(zvalue, size - zvalue.get_sort().bv_size())
+            ? (sign_extend ?
+                z3::sext(zvalue, size - zvalue.get_sort().bv_size()) :
+                z3::zext(zvalue, size - zvalue.get_sort().bv_size()))
             : symex->get(lvalue).extract(size - 1, 0)
     );
 
     return new_value;
 }
 
-void vexa::ir::builder::normalize(vexa::value& lhs, vexa::value& rhs)
+void vexa::ir::builder::normalize(vexa::value& lhs, vexa::value& rhs, bool sign_extend)
 {
     auto l_bitw = lhs.size();
     auto r_bitw = rhs.size();
+    
+    if (l_bitw == r_bitw) return;
     unsigned max_bitw = std::max(l_bitw, r_bitw);
 
-    if (l_bitw != max_bitw) lhs = resize(lhs, max_bitw);
-    if (r_bitw != max_bitw) rhs = resize(rhs, max_bitw);
+    if (l_bitw != max_bitw) lhs = resize(lhs, max_bitw, sign_extend);
+    if (r_bitw != max_bitw) rhs = resize(rhs, max_bitw, sign_extend);
 }
 
 vexa::value vexa::ir::builder::cmpeq(vexa::value lhs, vexa::value rhs, std::string name)
 {
     normalize(lhs, rhs);
     llvm::Value* v = CreateICmpEQ(lhs.as_llvm(), rhs.as_llvm(), name);
+
     z3::expr eq = symex->get(lhs.as_llvm()) == symex->get(rhs.as_llvm());
     z3::expr b = z3::ite(eq, symex->concrete(1, 1), symex->concrete(0, 1));
-
     symex->set(v, b);
+    
     return vexa::value(v, DL);
 }
 
@@ -148,6 +156,14 @@ vexa::value vexa::ir::builder::sub(vexa::value lhs, vexa::value rhs, std::string
     normalize(lhs, rhs);
     llvm::Value* v = CreateSub(lhs.as_llvm(), rhs.as_llvm(), name);
     symex->set(v, symex->get(lhs.as_llvm()) - symex->get(rhs.as_llvm()));
+    return vexa::value(v, DL);
+}
+
+vexa::value vexa::ir::builder::mul(vexa::value lhs, vexa::value rhs, std::string name)
+{
+    normalize(lhs, rhs);
+    llvm::Value* v = CreateMul(lhs.as_llvm(), rhs.as_llvm(), name);
+    symex->set(v, symex->get(lhs.as_llvm()) * symex->get(rhs.as_llvm()));
     return vexa::value(v, DL);
 }
 

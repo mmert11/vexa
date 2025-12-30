@@ -207,7 +207,7 @@ namespace vexa
     		vexa::value read_register(reg_t reg) override;
 		private:
 			vexa::value lift(ZydisDisassembledInstruction instruction);
-			vexa::value read_operand(ZydisDecodedOperand op);
+			vexa::value read_operand(ZydisDisassembledInstruction instruction, uint8_t operand_idx);
 			void write_operand(ZydisDecodedOperand op, vexa::value value);
 
 			void init_handlers();
@@ -228,6 +228,17 @@ namespace vexa
 			x64dcl(XOR);
 			x64dcl(NOT);
 			x64dcl(RET);
+
+			x64dcl(IMUL);
+			x64dcl(LEA);
+			x64dcl(SHL);
+			x64dcl(SHR);
+			x64dcl(ROL);
+			x64dcl(ROR);
+			x64dcl(NEG);
+			x64dcl(TEST);
+			x64dcl(SETZ);
+			x64dcl(SETNZ);
 
 			const std::map<ZydisRegister, reg_t> zydis_register_table = {
 				{ ZYDIS_REGISTER_RFLAGS, RFLAGS },

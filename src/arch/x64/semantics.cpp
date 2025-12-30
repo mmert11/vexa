@@ -29,6 +29,7 @@ void vexa::x64::cpu64::init_handlers()
         {ZYDIS_MNEMONIC_OR, lambda(OR)},
         {ZYDIS_MNEMONIC_XOR, lambda(XOR)},
         {ZYDIS_MNEMONIC_NOT, lambda(NOT)},
+        {ZYDIS_MNEMONIC_IMUL, lambda(IMUL)},
         {ZYDIS_MNEMONIC_RET, lambda(RET)}
     };
 }
@@ -46,12 +47,15 @@ void vexa::x64::cpu64::write_operand(ZydisDecodedOperand operand, vexa::value v)
     CATCH()
 }
 
-vexa::value vexa::x64::cpu64::read_operand(ZydisDecodedOperand operand)
+vexa::value vexa::x64::cpu64::read_operand(ZydisDisassembledInstruction instruction, uint8_t operand_idx)
 {
     TRY()
+    ZydisDecodedOperand operand = instruction.operands[operand_idx];
     switch (operand.type)
     {
-    case ZYDIS_OPERAND_TYPE_IMMEDIATE: return builder->get_const_int(operand.imm.value.u, operand.imm.size);
+    case ZYDIS_OPERAND_TYPE_IMMEDIATE:
+        if (operand.imm.is_signed) return builder->get_const_int(operand.imm.value.s, instruction.info.operand_width); 
+        else return builder->get_const_int(operand.imm.value.u, instruction.info.operand_width);
     case ZYDIS_OPERAND_TYPE_REGISTER:
     {
         vexa::value v = read_register(zydis_reg(operand.reg.value));
@@ -65,7 +69,7 @@ vexa::value vexa::x64::cpu64::read_operand(ZydisDecodedOperand operand)
 semantic(MOV)
 {
     TRY()
-    write_operand(instruction.operands[0], read_operand(instruction.operands[1]));
+    write_operand(instruction.operands[0], read_operand(instruction, 1));
     return next_rip();
     CATCH()
 }
@@ -73,8 +77,8 @@ semantic(MOV)
 semantic(ADD)
 {
     TRY()
-    vexa::value op1 = read_operand(instruction.operands[0]);
-    vexa::value op2 = read_operand(instruction.operands[1]);
+    vexa::value op1 = read_operand(instruction, 0);
+    vexa::value op2 = read_operand(instruction, 1);
     vexa::value v = builder->add(op1, op2, "add");
 
     write_operand(instruction.operands[0], v);
@@ -88,8 +92,8 @@ semantic(ADD)
 semantic(SUB)
 {
     TRY()
-    vexa::value op1 = read_operand(instruction.operands[0]);
-    vexa::value op2 = read_operand(instruction.operands[1]);
+    vexa::value op1 = read_operand(instruction, 0);
+    vexa::value op2 = read_operand(instruction, 1);
     vexa::value v = builder->sub(op1, op2, "add");
 
     write_operand(instruction.operands[0], v);
@@ -100,11 +104,25 @@ semantic(SUB)
     CATCH()
 }
 
+semantic(IMUL)
+{
+    switch (instruction.info.operand_count)
+    {
+    case 1:
+    {
+        vexa::value op1 = read_operand(instruction, 0);
+        vexa::value rax = read_register(x64::RAX);
+        vexa::value multiplied = builder->mul(op1, rax, "imul");
+    }
+    default: break;
+    }
+}
+
 semantic(CMP)
 {
     TRY()
-    vexa::value op1 = read_operand(instruction.operands[0]);
-    vexa::value op2 = read_operand(instruction.operands[1]);
+    vexa::value op1 = read_operand(instruction, 0);
+    vexa::value op2 = read_operand(instruction, 1);
     vexa::value zf = builder->cmpeq(op1, op2, "zf");
     write_register(x64::ZF, zf);
     return next_rip();
@@ -117,7 +135,7 @@ semantic(JMP)
     if (instruction.operands[0].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
         return resolve_imm_address(instruction);
 
-    vexa::value op1 = read_operand(instruction.operands[0]);
+    vexa::value op1 = read_operand(instruction, 0);
     if (op1.is_concrete()) // means this is an unconditional jump
         return op1;
 
@@ -167,8 +185,8 @@ semantic(JNZ)
 semantic(CMOVNZ)
 {
     TRY()
-    vexa::value op1 = read_operand(instruction.operands[0]);
-    vexa::value op2 = read_operand(instruction.operands[1]);
+    vexa::value op1 = read_operand(instruction, 0);
+    vexa::value op2 = read_operand(instruction, 1);
 
     vexa::value cond = builder->cmpeq(read_register(x64::ZF), builder->get_const_int(1, 8), "zf_cond");
     vexa::value sl = builder->select(cond, op1, op2, "cmovnz");
@@ -180,8 +198,8 @@ semantic(CMOVNZ)
 semantic(AND)
 {
     TRY()
-    vexa::value op1 = read_operand(instruction.operands[0]);
-    vexa::value op2 = read_operand(instruction.operands[1]);
+    vexa::value op1 = read_operand(instruction, 0);
+    vexa::value op2 = read_operand(instruction, 1);
     vexa::value result = builder->band(op1, op2, "and");
 
     write_operand(instruction.operands[0], result);
@@ -198,8 +216,8 @@ semantic(AND)
 semantic(OR)
 {
     TRY()
-    vexa::value op1 = read_operand(instruction.operands[0]);
-    vexa::value op2 = read_operand(instruction.operands[1]);
+    vexa::value op1 = read_operand(instruction, 0);
+    vexa::value op2 = read_operand(instruction, 1);
     
     vexa::value result = builder->bor(op1, op2, "or");
     
@@ -217,8 +235,8 @@ semantic(OR)
 semantic(XOR)
 {
     TRY()
-    vexa::value op1 = read_operand(instruction.operands[0]);
-    vexa::value op2 = read_operand(instruction.operands[1]);
+    vexa::value op1 = read_operand(instruction, 0);
+    vexa::value op2 = read_operand(instruction, 1);
     
     vexa::value result = builder->bxor(op1, op2, "or");
     
@@ -236,8 +254,8 @@ semantic(XOR)
 semantic(NOT)
 {
     TRY()
-    vexa::value op = read_operand(instruction.operands[0]);
-    vexa::value result = builder->bnot(op, "not");
+    vexa::value op1 = read_operand(instruction, 0);
+    vexa::value result = builder->bnot(op1, "not");
     
     write_operand(instruction.operands[0], result);
     return next_rip();    

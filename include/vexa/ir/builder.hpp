@@ -39,14 +39,16 @@ namespace vexa
             void set_ip(llvm::BasicBlock* bb);
             void jump(llvm::BasicBlock* bb);
             void jump_if(vexa::value cond, llvm::BasicBlock* then_bb, llvm::BasicBlock* else_bb);
+            void ret(llvm::Value* v);
 
             // arithmetic
             vexa::value get_const_int(uint64_t value, int bit_size);
-            vexa::value resize(vexa::value value, unsigned int size);
-            void normalize(vexa::value& lhs, vexa::value& rhs);
+            vexa::value resize(vexa::value value, unsigned int size, bool sign_extend = false);
+            void normalize(vexa::value& lhs, vexa::value& rhs, bool sign_extend = false);
 
             vexa::value add(vexa::value lhs, vexa::value rhs, std::string name);
             vexa::value sub(vexa::value lhs, vexa::value rhs, std::string name);
+            vexa::value mul(vexa::value lhs, vexa::value rhs, std::string name);
 
             vexa::value cmpeq(vexa::value lhs, vexa::value rhs, std::string name);
             vexa::value select(vexa::value cond, vexa::value lhs, vexa::value rhs, std::string name);
@@ -58,8 +60,6 @@ namespace vexa
             vexa::value bor(vexa::value lhs, vexa::value rhs, std::string name);
             vexa::value bxor(vexa::value lhs, vexa::value rhs, std::string name);
             vexa::value bnot(vexa::value lhs, std::string name);
-
-            void ret(llvm::Value* v);
         private:
             std::shared_ptr<vexa::context> context;
             std::shared_ptr<vexa::symex> symex;

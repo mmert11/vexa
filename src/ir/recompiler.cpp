@@ -2,7 +2,7 @@
 
 vexa::ir::recompiler::recompiler(std::shared_ptr<vexa::context> c) : context(c) {}
 
-std::vector<uint8_t> vexa::ir::recompiler::recompile(vexa::arch arch)
+std::vector<uint8_t> vexa::ir::recompiler::recompile(vexa::arch arch, bool optimize)
 {
     TRY();
     LLVMInitializeX86TargetInfo();
@@ -28,11 +28,16 @@ std::vector<uint8_t> vexa::ir::recompiler::recompile(vexa::arch arch)
     llvm::TargetOptions opt;
     auto RM = llvm::Reloc::Model::PIC_;
     std::unique_ptr<llvm::TargetMachine> TM(
-        Target->createTargetMachine(TripleStr, "generic", "", opt, RM, std::nullopt, llvm::CodeGenOptLevel::None)   
+        Target->createTargetMachine(TripleStr, "generic", "", opt, RM, std::nullopt,
+            optimize ?
+            llvm::CodeGenOptLevel::Aggressive :
+            llvm::CodeGenOptLevel::None
+        )
     );
 
     llvm::legacy::PassManager pass;
     
+    // i didnt understand why this code returns false if success...
     if (TM->addPassesToEmitFile(pass, dest, nullptr, llvm::CodeGenFileType::ObjectFile)) {
         THROW("re-compilation passes failed");
     }
