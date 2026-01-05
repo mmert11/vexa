@@ -197,6 +197,8 @@ namespace vexa
 		};
 
 		#define x64dcl(instr) vexa::value instr(ZydisDisassembledInstruction inst)
+		#define REG_INFO(reg) register_table.at(reg)
+
 		class cpu64 : public cpu
         {
 		public:
@@ -228,10 +230,9 @@ namespace vexa
 			x64dcl(XOR);
 			x64dcl(NOT);
 			x64dcl(RET);
-
 			x64dcl(IMUL);
-			x64dcl(LEA);
 			x64dcl(SHL);
+
 			x64dcl(SHR);
 			x64dcl(ROL);
 			x64dcl(ROR);
@@ -239,6 +240,7 @@ namespace vexa
 			x64dcl(TEST);
 			x64dcl(SETZ);
 			x64dcl(SETNZ);
+			x64dcl(LEA);
 
 			const std::map<ZydisRegister, reg_t> zydis_register_table = {
 				{ ZYDIS_REGISTER_RFLAGS, RFLAGS },

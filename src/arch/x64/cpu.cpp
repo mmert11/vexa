@@ -1,6 +1,5 @@
 #include <vexa/vexa.h>
-
-#define REG_INFO(reg) register_table.at(reg)
+//#pragma GCC optimize ("O0")
 
 vexa::x64::cpu64::cpu64(
     std::shared_ptr<ir::builder> _builder,
@@ -65,7 +64,7 @@ void vexa::x64::cpu64::run()
         vexa::value rip = read_register(x64::RIP);
         if (rip.is_symbolic())
             THROW("rip is symbolic!");
-
+            
         std::vector<uint8_t> read_bytes;
         for (int i = 0; i < 15; i++)
         {
@@ -92,6 +91,9 @@ void vexa::x64::cpu64::run()
             builder->set_ip(path.bb);
             continue;
         }
+
+        auto zf = symex->get(read_register(x64::ZF).as_llvm());
+        auto out = zf.is_numeral() ? zf.as_uint64() : zf;
 
         std::cout << std::hex << instruction.runtime_address << " " << instruction.text << std::endl;
         lift(instruction);
@@ -127,6 +129,9 @@ void vexa::x64::cpu64::write_register(vexa::reg_t reg, vexa::value value)
     vexa::value r64_vl = registers[r_info.base_id];
     std::string r_str = getRegisterStr(reg);
 
+    // resize the value's bitwidth to match the target register's bitwidth
+    value = builder->resize(value, r_info.size_bits);
+
     // direct write for 64-bit registers
     if (r_info.size_bits == 64)
     {
@@ -135,7 +140,6 @@ void vexa::x64::cpu64::write_register(vexa::reg_t reg, vexa::value value)
     }
 
     vexa::value final_v;
-
     if (r_info.size_bits == 32)
     {
         // resize and reset upper 32 bits
@@ -175,10 +179,12 @@ vexa::value vexa::x64::cpu64::read_register(vexa::reg_t reg)
     register_desc r_info = REG_INFO(reg);
     vexa::value r64_vl = registers[r_info.base_id];
 
+    vexa::value ret;
+
     if (r_info.size_bits == 64)
-        return r64_vl;
+        ret = r64_vl;
     else if (r_info.offset_bits == 0)
-        return builder->resize(r64_vl, r_info.size_bits);
+        ret = builder->resize(r64_vl, r_info.size_bits);
     else
     {
         const uint64_t mask = (1ULL << r_info.size_bits) - 1;
@@ -188,15 +194,20 @@ vexa::value vexa::x64::cpu64::read_register(vexa::reg_t reg)
                 r64_vl,
                 builder->get_const_int(r_info.offset_bits, 64),
                 getRegisterStr(reg));
-
+                
         vexa::value masked_r =
             builder->band(
                 shifted_r,
                 builder->get_const_int(mask, 64),
                 "masked_" + getRegisterStr(reg));
 
-        return masked_r;
+        ret = masked_r;
     }
+
+    if (ret.is_symbolic() && symex->get(ret.as_llvm()).is_numeral())
+        return builder->get_const_int(symex->get(ret.as_llvm()).get_numeral_int64(), ret.size());
+
+    return ret;
 
     CATCH()
 }

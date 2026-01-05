@@ -14,7 +14,7 @@ std::vector<uint8_t> vexa::ir::recompiler::recompile(vexa::arch arch, bool optim
     llvm::raw_svector_ostream dest(ObjBuffer);
 
     llvm::Triple T(llvm::sys::getDefaultTargetTriple());
-    T.setArch(arch == vexa::arch::x64 ? llvm::Triple::x86_64 : THROW("unimplemented arch!")); 
+    T.setArch(arch == vexa::arch::x86_64 ? llvm::Triple::x86_64 : THROW("unimplemented arch!")); 
 
     std::string TripleStr = T.str();
     context->llvm_module->setTargetTriple(TripleStr);

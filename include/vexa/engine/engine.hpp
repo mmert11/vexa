@@ -8,13 +8,13 @@ namespace vexa
 {
     enum class arch
     {
-        x64
+        x86_64
     };
 
     class engine
     {
     public:
-        engine(vexa::arch arch = arch::x64);
+        engine(vexa::arch arch = arch::x86_64);
         std::shared_ptr<vexa::context> get_context();
         std::shared_ptr<ir::builder> get_builder();
         std::shared_ptr<vexa::memory> get_memory();

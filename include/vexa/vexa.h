@@ -72,6 +72,12 @@ try \
 #define THROW(error) \
     throw vexa_exception(__FILE__, __LINE__, __PRETTY_FUNCTION__, (error))
 
+#define VEXA_ASSERT(cond)                                \
+    do {                                                 \
+        if (!(cond))                                    \
+            THROW("assert failed: " #cond);             \
+    } while (0)
+
 namespace vexa
 {
     namespace utils

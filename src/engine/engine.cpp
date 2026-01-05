@@ -11,10 +11,10 @@ vexa::engine::engine(vexa::arch arch) : _arch(arch)
     builder = std::make_shared<ir::builder>(context, symex);
 
     // init cpu
-    if (arch == arch::x64)
+    if (arch == arch::x86_64)
         cpu = std::make_shared<vexa::x64::cpu64>(builder, symex, memory, context);
     else
-        THROW("only x64 is supported");
+        THROW("only x86_64 is supported");
 
     CATCH()
 }

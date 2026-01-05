@@ -11,9 +11,12 @@
 
 #define update_sf(result)                                                                          \
     vexa::value sf = builder->resize(                                                              \
-        builder->bshr(result, builder->get_const_int(result.size() - 1, result.size()), "sf_bit"), \
+        builder->bshr(result, builder->get_const_int(result.size() - 1, result.size()), "sf"), \
         1);                                                                                        \
     write_register(x64::SF, sf);
+
+#define update_cf(cf) write_register(x64::CF, cf);
+#define update_of(of) write_register(x64::OF, of);
 
 void vexa::x64::cpu64::init_handlers()
 {
@@ -30,7 +33,8 @@ void vexa::x64::cpu64::init_handlers()
         {ZYDIS_MNEMONIC_XOR, lambda(XOR)},
         {ZYDIS_MNEMONIC_NOT, lambda(NOT)},
         {ZYDIS_MNEMONIC_IMUL, lambda(IMUL)},
-        {ZYDIS_MNEMONIC_RET, lambda(RET)}
+        {ZYDIS_MNEMONIC_RET, lambda(RET)},
+        {ZYDIS_MNEMONIC_SHL, lambda(SHL)}
     };
 }
 
@@ -59,6 +63,11 @@ vexa::value vexa::x64::cpu64::read_operand(ZydisDisassembledInstruction instruct
     case ZYDIS_OPERAND_TYPE_REGISTER:
     {
         vexa::value v = read_register(zydis_reg(operand.reg.value));
+        auto sym = symex->get(v.as_llvm());
+        if (v.is_symbolic() && sym.is_numeral()) { // when z3 can concretize it while llvm cant
+            std::cout << "folded constant by z3: " << sym.get_numeral_uint64() << std::endl;
+            return builder->get_const_int(sym.get_numeral_int64(), v.size());
+        }
         return v;
     }
     default: THROW(std::string("unimplemented operand type: ") + std::to_string(operand.type));
@@ -104,18 +113,98 @@ semantic(SUB)
     CATCH()
 }
 
+// TODO: implement cf/of flag calculations
 semantic(IMUL)
 {
-    switch (instruction.info.operand_count)
+    TRY()
+    switch (instruction.info.operand_count_visible)
     {
     case 1:
     {
         vexa::value op1 = read_operand(instruction, 0);
-        vexa::value rax = read_register(x64::RAX);
-        vexa::value multiplied = builder->mul(op1, rax, "imul");
+        uint8_t operand_size = op1.size();
+
+        switch (operand_size)
+        {
+        case 8:
+        {
+            vexa::value al = read_register(x64::AL);
+            vexa::value op_16 = builder->resize(op1, 16, true);
+            vexa::value al_16 = builder->resize(al, 16, true);
+
+            vexa::value mul_16 = builder->mul(op_16, al_16, "imul8_");
+            write_register(x64::AX, mul_16);
+
+            break;
+        }
+        case 16:
+        {
+            vexa::value ax = read_register(x64::AX);
+            vexa::value op_32 = builder->resize(op1, 32, true);
+            vexa::value ax_32 = builder->resize(ax, 32, true);
+
+            vexa::value mul_32 = builder->mul(op_32, ax_32, "imul16");
+            vexa::value h_32 = builder->extract(mul_32, 31, 16, "dx");
+            vexa::value l_32 = builder->resize(mul_32, 16);
+            l_32.as_llvm()->setName("ax");
+            
+            write_register(x64::DX, h_32);
+            write_register(x64::AX, l_32);
+            break;
+        }
+        case 32:
+        {
+            vexa::value eax = read_register(x64::EAX);
+            vexa::value op_64 = builder->resize(op1, 64, true);
+            vexa::value eax_64 = builder->resize(eax, 64, true);
+            vexa::value mul_64 = builder->mul(op_64, eax_64, "imul32");
+            
+            vexa::value h_32 = builder->extract(mul_64, 63, 32, "edx");
+            vexa::value l_32 = builder->resize(mul_64, 32);
+            l_32.as_llvm()->setName("eax");
+
+            write_register(x64::EDX, h_32);
+            write_register(x64::EAX, l_32);
+            break;
+        }
+        case 64:
+        {
+            vexa::value rax = read_register(x64::RAX);
+            vexa::value op_128 = builder->resize(op1, 128, true);
+            vexa::value rax_128 = builder->resize(rax, 128, true);
+            vexa::value mul_128 = builder->mul(op_128, rax_128, "imul64");
+            
+            vexa::value h_64 = builder->extract(mul_128, 127, 64, "rdx");
+            vexa::value l_64 = builder->resize(mul_128, 64);
+            l_64.as_llvm()->setName("rax");
+
+            write_register(x64::RDX, h_64);
+            write_register(x64::RAX, l_64);
+            break;
+        }
+        default: THROW("imul error");
+        }
+        break;
     }
-    default: break;
+    case 2: 
+    {
+        vexa::value op0 = read_operand(instruction, 0);
+        vexa::value op1 = read_operand(instruction, 1);
+        write_operand(instruction.operands[0], builder->mul(op0, op1, "imul"));
+        break;
     }
+    case 3:
+    {
+        vexa::value op1 = read_operand(instruction, 1);
+        vexa::value op2 = read_operand(instruction, 2);
+        write_operand(instruction.operands[0], builder->mul(op1, op2, "imul"));
+        break;
+    }
+    default: THROW("imul error");
+    }
+
+    return next_rip();
+    CATCH();
 }
 
 semantic(CMP)
@@ -137,7 +226,12 @@ semantic(JMP)
 
     vexa::value op1 = read_operand(instruction, 0);
     if (op1.is_concrete()) // means this is an unconditional jump
+    {
+        // if destination address is 0, we assume it is unreachable
+        if (op1.as_uint64() == 0)
+            builder->unreachable();
         return op1;
+    }
 
     // conditional indirect jump
     auto [t, f] = resolve_indirect_jmp(op1);
@@ -155,6 +249,19 @@ semantic(JMP)
     CATCH()
 }
 
+bool is_always_true(z3::expr e) {
+    z3::solver s(e.ctx());
+    s.add(e == 0);
+    return s.check() == z3::unsat;
+}
+
+bool is_always_false(z3::expr e) {
+    z3::solver s(e.ctx());
+    s.add(e != 0);
+    return s.check() == z3::unsat;
+}
+
+// TODO: implement solving opaque predicates using z3 properly
 semantic(JNZ)
 {
     TRY()
@@ -164,9 +271,23 @@ semantic(JNZ)
 
     if (zf.is_concrete())
     {
+        printf("opaque predicate detected, zf: %ld\n", zf.as_uint64());
         uint64_t conc_zf = zf.as_uint64();
         if (conc_zf) return next;
         else return dest;
+    }
+
+    auto symbolic_cond = symex->get(zf.as_llvm());
+    if (true) // use solver to solve opaque predicates
+    {        
+        if (is_always_true(symbolic_cond)) {
+            std::cout << "opaque predicate solved, zf: 1" << std::endl;
+            return next;
+        }
+        if (is_always_false(symbolic_cond)) {
+            std::cout << "opaque predicate solved, zf: 0" << std::endl;
+            return dest;
+        }
     }
 
     vexa::value cond = builder->cmpeq(zf, builder->get_const_int(0, 8), "jnz");
@@ -262,10 +383,68 @@ semantic(NOT)
     CATCH()
 }
 
+semantic(SHL)
+{
+    TRY()
+    vexa::value dst = read_operand(instruction, 0);
+    vexa::value count = read_operand(instruction, 1);
+    uint8_t size = dst.size();
+
+    // masking the shift count to clamp it
+    // if operand size is 64, mask is 63, else its 31
+    uint64_t mask = dst.size() == 64 ? 63 : 31;
+    vexa::value masked_count = builder->band(count, builder->get_const_int(mask, 8), "masked_count");
+    vexa::value result = builder->bshl(dst, masked_count, "shl");
+
+    // flags calculation
+    // if count is zero, no flags should be updated
+    // cf must be the last shifted bit
+    vexa::value is_count_zero = builder->cmpeq(builder->get_const_int(0, 8), masked_count, "is_count_zero");
+    vexa::value old_cf = read_register(x64::CF);
+    
+    // cf flag calculation
+    // sets cf to last shifted bit in destination
+    // last_shifted_bit_idx = operand_size - count
+    vexa::value last_shifted_bit_idx = builder->sub(builder->get_const_int(size, 8), masked_count, "lsb_idx");
+    // if count is 0, lsb index will be "size - 0" and it will cause UB, so we clamp the index with "size - 1"
+    // lsb_idx_clamp = last_shifted_bit_idx & (operand_size - 1)
+    vexa::value lsb_idx_clamp = builder->band(last_shifted_bit_idx, builder->get_const_int(size - 1, 8), "lsb_idx_clamp");
+    // lsb = dst >> lsb_idx_clamp
+    // cf = is_count_zero ? old_cf : lsb (last_shifted_bit)
+    vexa::value lsb = builder->resize(builder->bshr(dst, lsb_idx_clamp, "last_shifted_bit"), 1);
+    vexa::value cf = builder->select(is_count_zero, old_cf, lsb, "cf");
+
+    // of flag calculation
+    // of = is_count_zero ? old_of : c ^ last_bit_of_shifted_value
+    // last_bit = result >> size - 1
+    vexa::value last_bit = builder->resize(builder->bshr(result, builder->get_const_int(size - 1, 64), "last_bit"), 1);
+    vexa::value old_of = read_register(x64::OF);
+    vexa::value of = builder->select(is_count_zero,
+        old_of,
+        builder->bxor(cf, last_bit, "cf_xor_msb"),
+        "of"
+    );
+
+    write_operand(instruction.operands[0], result);
+    update_cf(cf);
+    update_of(of);
+
+    vexa::value is_zero = builder->cmpeq(result, builder->get_const_int(0, size), "is_zero");
+    vexa::value final_zf = builder->select(is_count_zero, read_register(x64::ZF), is_zero, "zf");
+    vexa::value final_sf = builder->select(is_count_zero, read_register(x64::SF), last_bit, "sf");
+
+    // we dont use zf/sf helpers here because flag assigments are conditional
+    write_register(x64::ZF, final_zf); //update_zf(result);
+    write_register(x64::SF, final_sf); //update_sf(result);
+
+    return next_rip();
+    CATCH()
+}
+
 semantic(RET)
 {
     TRY()
-    builder->ret(read_register(x64::RAX).as_llvm());
+    builder->ret(read_register(x64::RAX));
     return builder->get_const_int(0, 64);
     CATCH()
 }

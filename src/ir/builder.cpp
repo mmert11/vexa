@@ -86,8 +86,8 @@ vexa::value vexa::ir::builder::resize(vexa::value value, unsigned int size, bool
 
     llvm::Value* lvalue = value.as_llvm();
     llvm::Value* v = sign_extend ?
-                    CreateSExtOrTrunc(lvalue, getIntNTy(size), lvalue->getName().str()) :
-                    CreateZExtOrTrunc(lvalue, getIntNTy(size), lvalue->getName().str());
+                    CreateSExtOrTrunc(lvalue, getIntNTy(size)) :
+                    CreateZExtOrTrunc(lvalue, getIntNTy(size));
     vexa::value new_value(v, DL);
 
     // extend or truncate in z3
@@ -102,6 +102,26 @@ vexa::value vexa::ir::builder::resize(vexa::value value, unsigned int size, bool
     );
 
     return new_value;
+}
+
+void vexa::ir::builder::unreachable()
+{
+    CreateUnreachable();
+}
+
+vexa::value vexa::ir::builder::extract(vexa::value value, uint8_t high, uint8_t low, std::string name)
+{
+    uint8_t v_size = value.size();
+    VEXA_ASSERT(high < v_size);
+    VEXA_ASSERT(low  < v_size);
+    VEXA_ASSERT(high >= low);
+
+    uint8_t width = high - low + 1;
+    uint64_t mask = width == 64 ? -1ULL : (1ULL << width) - 1;
+
+    vexa::value shifted = bshr(value, get_const_int(low, v_size), name + "_shr");
+    vexa::value res = band(shifted, get_const_int(mask, v_size), name);
+    return res;
 }
 
 void vexa::ir::builder::normalize(vexa::value& lhs, vexa::value& rhs, bool sign_extend)
@@ -211,12 +231,12 @@ vexa::value vexa::ir::builder::bnot(vexa::value lhs, std::string name)
 {
     llvm::Value* v = CreateNot(lhs.as_llvm(), name);
     symex->set(v, ~symex->get(lhs.as_llvm()));
-    return vexa::value(v, DL);
+    return vexa::value(v, DL); 
 }
 
-void vexa::ir::builder::ret(llvm::Value* v)
+void vexa::ir::builder::ret(vexa::value v)
 {
-    CreateRet(v);
+    CreateRet(v.as_llvm());
 }
 
 void vexa::ir::builder::optimize()

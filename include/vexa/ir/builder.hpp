@@ -28,6 +28,7 @@ namespace vexa
             vexa::value symvar(int param_idx, std::string name);
             int get_instr_count();
             void optimize();
+            void unreachable();
 
             llvm::Function* create_function(std::string name, std::vector<llvm::Type*> args);
             llvm::Function* get_function();
@@ -39,11 +40,12 @@ namespace vexa
             void set_ip(llvm::BasicBlock* bb);
             void jump(llvm::BasicBlock* bb);
             void jump_if(vexa::value cond, llvm::BasicBlock* then_bb, llvm::BasicBlock* else_bb);
-            void ret(llvm::Value* v);
+            void ret(vexa::value v);
 
             // arithmetic
             vexa::value get_const_int(uint64_t value, int bit_size);
             vexa::value resize(vexa::value value, unsigned int size, bool sign_extend = false);
+            vexa::value extract(vexa::value value, uint8_t high, uint8_t low, std::string name);
             void normalize(vexa::value& lhs, vexa::value& rhs, bool sign_extend = false);
 
             vexa::value add(vexa::value lhs, vexa::value rhs, std::string name);
