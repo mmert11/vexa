@@ -92,9 +92,6 @@ void vexa::x64::cpu64::run()
             continue;
         }
 
-        auto zf = symex->get(read_register(x64::ZF).as_llvm());
-        auto out = zf.is_numeral() ? zf.as_uint64() : zf;
-
         std::cout << std::hex << instruction.runtime_address << " " << instruction.text << std::endl;
         lift(instruction);
     }
@@ -203,10 +200,7 @@ vexa::value vexa::x64::cpu64::read_register(vexa::reg_t reg)
 
         ret = masked_r;
     }
-
-    if (ret.is_symbolic() && symex->get(ret.as_llvm()).is_numeral())
-        return builder->get_const_int(symex->get(ret.as_llvm()).get_numeral_int64(), ret.size());
-
+    
     return ret;
 
     CATCH()
@@ -226,9 +220,12 @@ std::pair<vexa::value, vexa::value> vexa::x64::cpu64::resolve_indirect_jmp(vexa:
     if (llvm::SelectInst* sel = llvm::dyn_cast<llvm::SelectInst>(v.as_llvm())) 
     {
         const llvm::DataLayout* DL = &context->llvm_module->getDataLayout();
-        auto rs = std::pair<vexa::value, vexa::value>(
-            vexa::value(sel->getTrueValue(), DL),
-            vexa::value(sel->getFalseValue(), DL)
+        llvm::Value* true_v = sel->getTrueValue();
+        llvm::Value* false_v = sel->getFalseValue();
+        auto rs = std::pair<vexa::value, vexa::value>
+        (
+            vexa::value(true_v, DL, symex->get(true_v), symex),
+            vexa::value(false_v, DL, symex->get(false_v), symex)
         );
         
         if (rs.first.is_symbolic() || rs.second.is_symbolic())

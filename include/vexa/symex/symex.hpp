@@ -1,3 +1,4 @@
+#pragma once
 #include "../value/value.hpp"
 #include <z3++.h>
 
@@ -13,6 +14,7 @@ namespace vexa
         z3::expr concrete(uint64_t val, int size);
         z3::expr get(llvm::Value* v);
         void set(llvm::Value* v, z3::expr e); 
+        bool is_sync(llvm::Value* v);
     private:
         std::shared_ptr<vexa::context> context;
         std::map<llvm::Value*, std::shared_ptr<z3::expr>> vars;

@@ -20,12 +20,12 @@ z3::expr vexa::symex::get(llvm::Value* v)
 
 void vexa::symex::set(llvm::Value* v, z3::expr e)
 {
-    if (vars.find(v) != vars.end())
-    {
-        if (!llvm::isa<llvm::Constant>(v) && get(v).as_uint64() == llvm::dyn_cast<llvm::ConstantInt>(v)->getZExtValue())
-            THROW("SSA error, something wrong here");
-        return;
-    }
-
     vars[v] = std::make_shared<z3::expr>(e.simplify());
+}
+
+bool vexa::symex::is_sync(llvm::Value* v)
+{
+    if (vars.find(v) != vars.end())
+        return true;
+    return false;
 }

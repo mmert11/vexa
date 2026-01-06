@@ -63,11 +63,6 @@ vexa::value vexa::x64::cpu64::read_operand(ZydisDisassembledInstruction instruct
     case ZYDIS_OPERAND_TYPE_REGISTER:
     {
         vexa::value v = read_register(zydis_reg(operand.reg.value));
-        auto sym = symex->get(v.as_llvm());
-        if (v.is_symbolic() && sym.is_numeral()) { // when z3 can concretize it while llvm cant
-            std::cout << "folded constant by z3: " << sym.get_numeral_uint64() << std::endl;
-            return builder->get_const_int(sym.get_numeral_int64(), v.size());
-        }
         return v;
     }
     default: THROW(std::string("unimplemented operand type: ") + std::to_string(operand.type));
