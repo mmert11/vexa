@@ -30,6 +30,7 @@ public:
         const std::string& msg)
     {
         std::stringstream ss;
+        ss << std::endl;
         ss << "\033[91m[exception]\033[0m ";
         ss << "\033[96m[" << std::filesystem::path(file).filename().string() << ":" << line << "]\033[0m ";
         std::string func_name = extract_full_func(func);
@@ -52,6 +53,10 @@ try \
 
 #define CATCH() \
     } catch (const vexa_exception& e) { \
+        std::string func_name = extract_full_func(__PRETTY_FUNCTION__); \
+        std::cerr << "\033[91m[exception]\033[0m "; \
+        std::cerr << "\033[96m[" << std::filesystem::path(__FILE__).filename().string() << ":" << __LINE__ << "]\033[0m "; \
+        std::cerr << "\033[92m[" << func_name << "]\033[0m "; \
         std::cerr << e.what() << std::endl; \
         std::cerr << "program halted" << std::endl; \
         std::exit(-1); \

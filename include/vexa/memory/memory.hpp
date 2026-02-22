@@ -10,8 +10,8 @@ namespace vexa
     struct mem_state
     {
     public:
-        z3::expr mem;
-        std::unordered_map<uint64_t, uint8_t> concrete_cache;
+        std::unordered_map<std::shared_ptr<z3::expr>, std::shared_ptr<z3::expr>> symbolic_memory;
+        std::unordered_map<uint64_t, std::shared_ptr<z3::expr>> concrete_memory;
     };
 
     class memory
@@ -19,6 +19,7 @@ namespace vexa
     public:
         memory();
         memory(std::shared_ptr<vexa::context> _context);
+        std::pair<std::shared_ptr<z3::expr>, bool> get_if_written_before(z3::expr addr);
         void write(z3::expr addr, z3::expr val);
         z3::expr read(z3::expr addr, int size);
 
@@ -27,7 +28,7 @@ namespace vexa
 
     private:
         std::shared_ptr<vexa::context> context;
-        std::shared_ptr<z3::expr> mem;
-        std::unordered_map<uint64_t, uint8_t> concrete_cache;
+        std::unordered_map<std::shared_ptr<z3::expr>, std::shared_ptr<z3::expr>> symbolic_memory;
+        std::unordered_map<uint64_t, std::shared_ptr<z3::expr>> concrete_memory;
     };
 }

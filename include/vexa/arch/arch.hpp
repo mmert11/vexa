@@ -55,12 +55,15 @@ namespace vexa
         virtual void write_register(reg_t reg, vexa::value value) = 0;
         virtual vexa::value read_register(reg_t reg) = 0;
         int lifted_count;
+        vexa::value stack_ptr, original_sp;
 
         snapshot take_snapshot();
         void restore_snapshot(snapshot ss);
     
         std::stack<path_state> unexplored_paths;
         std::map<reg_t, vexa::value> registers;
+        std::map<uint64_t, llvm::BasicBlock*> lifted_blocks;
+
         std::shared_ptr<ir::builder> builder;
         std::shared_ptr<vexa::symex> symex;
         std::shared_ptr<vexa::memory> memory;

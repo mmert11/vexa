@@ -1,7 +1,8 @@
 #include <vexa/vexa.h>
 
-vexa::ir::builder::builder(std::shared_ptr<vexa::context> _context, std::shared_ptr<vexa::symex> _symex)
-    : llvm::IRBuilder<>(*_context->llvm_context), context(_context), symex(_symex), DL(&_context->llvm_module->getDataLayout())
+vexa::ir::builder::builder(std::shared_ptr<vexa::context> _context, std::shared_ptr<vexa::symex> _symex, std::shared_ptr<vexa::memory> _memory)
+    : llvm::IRBuilder<>(*_context->llvm_context), context(_context), symex(_symex), memory(_memory),
+      DL(&_context->llvm_module->getDataLayout())
 {
 }
 
@@ -22,7 +23,6 @@ vexa::value vexa::ir::builder::symvar(int param_idx, std::string name)
 {
     llvm::Argument *arg = function->getArg(param_idx);
     arg->setName(name);
-
     vexa::value val(arg, DL,
                     symex->symbolic(name, DL->getTypeSizeInBits(arg->getType())), symex);
     return val;
@@ -110,8 +110,8 @@ vexa::value vexa::ir::builder::resize(vexa::value value, unsigned int size, bool
     z3::expr zvalue = value.as_expr();
     z3::expr final_zvalue = value.size() < size
                                 ? sign_extend
-                                    ? z3::sext(zvalue, size - zvalue.get_sort().bv_size())
-                                    : z3::zext(zvalue, size - zvalue.get_sort().bv_size())
+                                      ? z3::sext(zvalue, size - zvalue.get_sort().bv_size())
+                                      : z3::zext(zvalue, size - zvalue.get_sort().bv_size())
                                 : zvalue.extract(size - 1, 0);
 
     vexa::value new_value(v, DL, final_zvalue, symex);
@@ -131,6 +131,47 @@ void vexa::ir::builder::normalize(vexa::value &lhs, vexa::value &rhs, bool sign_
         lhs = resize(lhs, max_bitw, sign_extend);
     if (r_bitw != max_bitw)
         rhs = resize(rhs, max_bitw, sign_extend);
+}
+
+vexa::value vexa::ir::builder::alloca(llvm::Type *ty, uint64_t size, z3::expr symbol, std::string name)
+{
+    llvm::AllocaInst* allocated = CreateAlloca(ty, get_const_int(size, 64).as_llvm(), name);
+    return vexa::value(allocated, DL, symbol, symex);
+}
+
+#define PTR_TYPE() llvm::PointerType::getUnqual(*context->llvm_context)
+vexa::value vexa::ir::builder::inttoptr(vexa::value v, std::string name, llvm::Type* ptr_ty)
+{
+    llvm::Value *lv = CreateIntToPtr(v.as_llvm(), !ptr_ty ? PTR_TYPE() : ptr_ty, name);
+    z3::expr zv = v.as_expr();
+    return vexa::value(lv, DL, zv, symex);
+}
+
+vexa::value vexa::ir::builder::ptrtoint(vexa::value v, uint8_t int_size, std::string name)
+{
+    llvm::Value *lv = CreatePtrToInt(v.as_llvm(), get_int_ty(int_size), name);
+    z3::expr zv = v.as_expr();
+    return vexa::value(lv, DL, zv, symex);
+}
+
+vexa::value vexa::ir::builder::inbounds_gep(llvm::Type *ty, vexa::value ptr, vexa::value offset, std::string name)
+{
+    llvm::Value *stackPtr = CreateInBoundsGEP(ty, ptr.as_llvm(), offset.as_llvm(), name);
+    z3::expr symPtr = ptr.as_expr() + offset.as_expr();
+    return vexa::value(stackPtr, DL, symPtr, symex);
+}
+
+vexa::value vexa::ir::builder::load(llvm::Type *ty, vexa::value ptr, std::string name)
+{
+    llvm::LoadInst *inst = CreateLoad(ty, ptr.as_llvm(), name);
+    z3::expr z3_read = memory->read(ptr.as_expr(), DL->getTypeSizeInBits(ty));
+    return vexa::value(inst, DL, z3_read, symex);
+}
+
+void vexa::ir::builder::store(vexa::value v, vexa::value ptr)
+{
+    llvm::Instruction *inst = CreateStore(v.as_llvm(), ptr.as_llvm());
+    memory->write(ptr.as_expr(), v.as_expr());
 }
 
 vexa::value vexa::ir::builder::cmpeq(vexa::value lhs, vexa::value rhs, std::string name)

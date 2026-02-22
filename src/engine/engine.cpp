@@ -8,7 +8,7 @@ vexa::engine::engine(vexa::arch arch) : _arch(arch)
     context = std::make_shared<vexa::context>();
     memory = std::make_shared<vexa::memory>(context);
     symex = std::make_shared<vexa::symex>(context);
-    builder = std::make_shared<ir::builder>(context, symex);
+    builder = std::make_shared<ir::builder>(context, symex, memory);
 
     // init cpu
     if (arch == arch::x86_64)

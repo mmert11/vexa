@@ -115,7 +115,9 @@ namespace vexa
 
 		static constexpr reg_t RIP = 73;
 
-		static constexpr reg_t NB_REGS = 74;
+		static constexpr reg_t GS = 74;
+
+		static constexpr reg_t NB_REGS = 75;
 
 		static const std::map<reg_t, register_desc> register_table =
 		{
@@ -193,7 +195,9 @@ namespace vexa
 			// RFLAGS
 			{ RFLAGS, { RFLAGS, 64, 0} }, { CF, { RFLAGS, 1, 0 } },
 			{ ZF, { RFLAGS, 1, 6 } }, { SF, {RFLAGS, 1, 7 } },
-			{ OF, { RFLAGS, 1, 11 } }
+			{ OF, { RFLAGS, 1, 11 } },
+
+			{ GS, { GS, 64, 0 } }
 		};
 
 		#define x64dcl(instr) vexa::value instr(ZydisDisassembledInstruction inst)
@@ -216,9 +220,12 @@ namespace vexa
 			std::unordered_map<ZydisMnemonic, std::function<vexa::value(ZydisDisassembledInstruction)>> handlers;
 
 			vexa::value resolve_imm_address(ZydisDisassembledInstruction instruction);
+			vexa::value resolve_mem_address(ZydisDecodedOperand operand);
+			bool is_stack_access(vexa::value addr);
 			std::pair<vexa::value, vexa::value> resolve_indirect_jmp(vexa::value v);
 
 			x64dcl(MOV);
+			x64dcl(MOVSXD);
 			x64dcl(ADD);
 			x64dcl(SUB);
 			x64dcl(JMP);
@@ -230,20 +237,29 @@ namespace vexa
 			x64dcl(XOR);
 			x64dcl(NOT);
 			x64dcl(RET);
+			x64dcl(CDQE);
+			x64dcl(PUSH);
+			x64dcl(POP);
+			x64dcl(PUSHF);
+			x64dcl(POPF);
 			x64dcl(IMUL);
 			x64dcl(SHL);
-
 			x64dcl(SHR);
 			x64dcl(ROL);
+			x64dcl(LEA);
+			x64dcl(NOP);
+			x64dcl(TEST);
+			x64dcl(INC);
+
 			x64dcl(ROR);
 			x64dcl(NEG);
-			x64dcl(TEST);
 			x64dcl(SETZ);
 			x64dcl(SETNZ);
-			x64dcl(LEA);
 
 			const std::map<ZydisRegister, reg_t> zydis_register_table = {
 				{ ZYDIS_REGISTER_RFLAGS, RFLAGS },
+				{ ZYDIS_REGISTER_RIP, RIP },
+				{ ZYDIS_REGISTER_GS, GS },
 
 				{ ZYDIS_REGISTER_RAX, RAX },
 				{ ZYDIS_REGISTER_EAX, EAX },
@@ -353,7 +369,8 @@ namespace vexa
 			{R13, "r13"}, {R13D, "r13d"}, {R13W, "r13w"}, {R13B, "r13b"},
 			{R14, "r14"}, {R14D, "r14d"}, {R14W, "r14w"}, {R14B, "r14b"},
 			{R15, "r15"}, {R15D, "r15d"}, {R15W, "r15w"}, {R15B, "r15b"},
-			{RFLAGS, "rflags"}, {CF, "cf"}, {ZF, "zf"}, {SF, "sf"}, {OF, "of"}
+			{RFLAGS, "rflags"}, {CF, "cf"}, {ZF, "zf"}, {SF, "sf"}, {OF, "of"},
+			{GS, "gs"}
 		};
     }
 }

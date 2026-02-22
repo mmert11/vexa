@@ -9,11 +9,14 @@
 #include <llvm/Passes/OptimizationLevel.h>
 #include <llvm/Analysis/ConstantFolding.h>
 #include <llvm/IR/InstIterator.h>
+#include <llvm/IR/MDBuilder.h>
 
 #include "../context.hpp"
 #include "../value/value.hpp"
 #include "../symex/symex.hpp"
+#include "../memory/memory.hpp"
 
+#undef alloca
 namespace vexa
 {
     namespace ir
@@ -21,7 +24,8 @@ namespace vexa
         class builder : private llvm::IRBuilder<>
         {
         public:
-            builder(std::shared_ptr<vexa::context> _context, std::shared_ptr<vexa::symex> _symex);
+            builder(std::shared_ptr<vexa::context> _context, std::shared_ptr<vexa::symex> _symex,
+                std::shared_ptr<vexa::memory> _memory);
 
             // utils
             llvm::Type* get_int_ty(unsigned int size);
@@ -43,28 +47,37 @@ namespace vexa
             void jump_if(vexa::value cond, llvm::BasicBlock* then_bb, llvm::BasicBlock* else_bb);
             void ret(vexa::value v);
 
+            // memory
+            vexa::value alloca(llvm::Type* ty, uint64_t size, z3::expr symbol, std::string name);
+            vexa::value inttoptr(vexa::value v, std::string name = "", llvm::Type* ptr_ty = nullptr);
+            vexa::value ptrtoint(vexa::value v, uint8_t int_size, std::string name = "");
+            vexa::value inbounds_gep(llvm::Type* ty, vexa::value ptr, vexa::value offset, std::string name = "GEP");
+            vexa::value load(llvm::Type* ty, vexa::value ptr, std::string name);
+            void store(vexa::value v, vexa::value ptr);
+
             // arithmetic
             vexa::value resize(vexa::value value, unsigned int size, bool sign_extend = false);
             vexa::value extract(vexa::value value, uint8_t high, uint8_t low, std::string name);
             void normalize(vexa::value& lhs, vexa::value& rhs, bool sign_extend = false);
 
-            vexa::value add(vexa::value lhs, vexa::value rhs, std::string name);
-            vexa::value sub(vexa::value lhs, vexa::value rhs, std::string name);
-            vexa::value mul(vexa::value lhs, vexa::value rhs, std::string name);
+            vexa::value add(vexa::value lhs, vexa::value rhs, std::string name = "");
+            vexa::value sub(vexa::value lhs, vexa::value rhs, std::string name = "");
+            vexa::value mul(vexa::value lhs, vexa::value rhs, std::string name = "");
 
             vexa::value cmpeq(vexa::value lhs, vexa::value rhs, std::string name);
             vexa::value select(vexa::value cond, vexa::value lhs, vexa::value rhs, std::string name);
 
             // bit operations
-            vexa::value band(vexa::value lhs, vexa::value rhs, std::string name);
-            vexa::value bshl(vexa::value lhs, vexa::value rhs, std::string name);
-            vexa::value bshr(vexa::value lhs, vexa::value rhs, std::string name);
-            vexa::value bor(vexa::value lhs, vexa::value rhs, std::string name);
-            vexa::value bxor(vexa::value lhs, vexa::value rhs, std::string name);
-            vexa::value bnot(vexa::value lhs, std::string name);
+            vexa::value band(vexa::value lhs, vexa::value rhs, std::string name = "");
+            vexa::value bshl(vexa::value lhs, vexa::value rhs, std::string name = "");
+            vexa::value bshr(vexa::value lhs, vexa::value rhs, std::string name = "");
+            vexa::value bor(vexa::value lhs, vexa::value rhs, std::string name = "");
+            vexa::value bxor(vexa::value lhs, vexa::value rhs, std::string name = "");
+            vexa::value bnot(vexa::value lhs, std::string name = "");
         private:
             std::shared_ptr<vexa::context> context;
             std::shared_ptr<vexa::symex> symex;
+            std::shared_ptr<vexa::memory> memory;
             llvm::Function* function;
             const llvm::DataLayout* DL;
         };

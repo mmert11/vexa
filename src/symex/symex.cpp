@@ -20,12 +20,12 @@ z3::expr vexa::symex::get(llvm::Value* v)
 
 void vexa::symex::set(llvm::Value* v, z3::expr e)
 {
-    vars[v] = std::make_shared<z3::expr>(e.simplify());
+    vars[v] = std::make_shared<z3::expr>(e);
 }
 
 bool vexa::symex::is_sync(llvm::Value* v)
 {
-    if (vars.find(v) != vars.end())
+    if (vars.count(v))
         return true;
     return false;
 }
