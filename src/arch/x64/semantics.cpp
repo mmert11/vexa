@@ -67,8 +67,7 @@ void vexa::x64::cpu64::write_operand(ZydisDecodedOperand operand, vexa::value v)
 
         if (is_stack_access(address))
         {
-            ptr = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr,
-                address, "stack_access");
+            ptr = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr, address, "stack_access");
         }
         else
             ptr = builder->inttoptr(address, "ptr");
@@ -101,8 +100,7 @@ vexa::value vexa::x64::cpu64::read_operand(ZydisDisassembledInstruction instruct
         vexa::value ptr;
 
         if (is_stack_access(address))
-            ptr = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr,
-                address, "mem_operand");
+            ptr = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr, address, "mem_operand");
         else
             ptr = builder->inttoptr(address, "ptr");
 
@@ -377,6 +375,7 @@ semantic(JNZ)
     vexa::value cond = builder->cmpeq(zf, builder->get_const_int(0, 8), "jnz");
     llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
 
+    // deactivated
     if (lifted_blocks.count(dest.as_uint64()) && false)
     {
         builder->jump_if(cond, lifted_blocks[dest.as_uint64()], else_bb);
@@ -384,7 +383,7 @@ semantic(JNZ)
         return next;
     }
 
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(instruction.runtime_address));
+    llvm::BasicBlock* then_bb = builder->basic_block(utils::addr_to_str(instruction.runtime_address));
 
     path_state path_s = {take_snapshot(), next, else_bb};
     unexplored_paths.push(path_s);
@@ -400,11 +399,30 @@ semantic(CMOVNZ)
     TRY()
     vexa::value op1 = read_operand(instruction, 0);
     vexa::value op2 = read_operand(instruction, 1);
+    vexa::value next_r = next_rip();
 
-    vexa::value cond = builder->cmpeq(read_register(x64::ZF), builder->get_const_int(1, 8), "zf_cond");
-    vexa::value sl = builder->select(cond, op1, op2, "cmovnz");
-    write_operand(instruction.operands[0], sl);
-    return next_rip();
+    vexa::value cond = builder->cmpeq(read_register(x64::ZF), builder->get_const_int(0, 8), "zf_cond");
+
+    if (cond.is_symbolic())
+    {
+        llvm::BasicBlock*  then_bb = builder->basic_block(utils::addr_to_str(instruction.runtime_address));
+        llvm::BasicBlock*  else_bb = builder->basic_block(utils::addr_to_str(instruction.runtime_address));
+
+        path_state path = {take_snapshot(), next_r, else_bb};
+        unexplored_paths.push(path);
+
+        builder->jump_if(cond, then_bb, else_bb);
+        builder->set_ip(then_bb);
+        write_operand(instruction.operands[0], op2);
+        return next_r;
+    }
+    else
+    {
+        vexa::value sl = builder->select(cond, op2, op1, "cmovnz");
+        write_operand(instruction.operands[0], sl);
+        return next_r;
+    }
+
     CATCH()
 }
 

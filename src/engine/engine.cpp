@@ -44,8 +44,22 @@ void vexa::engine::optimize()
     rso.flush();
 }
 
+#include "llvm/Support/FileSystem.h"
+void writeIRToFile(llvm::Module* module, const std::string& filename) {
+    std::error_code EC;
+    llvm::raw_fd_ostream outFile(filename, EC, llvm::sys::fs::OF_None);
+
+    if (EC) {
+        llvm::errs() << "Dosya acilamadi: " << EC.message() << "\n";
+        return;
+    }
+
+    module->print(outFile, nullptr);
+}
+
 void vexa::engine::print_ir()
-{    
+{
+    writeIRToFile(context->llvm_module.get(), "output.ll");
     const size_t asm_count      = cpu->lifted_count;
     const size_t ir_before_opt  = instr_count;
     const size_t ir_after_opt   = builder->get_instr_count();

@@ -56,9 +56,11 @@ vexa::x64::cpu64::cpu64(
     registers[GS] = builder->load(i64_t, builder->inttoptr(builder->get_const_int(0, 64), "", gs_ptr_type), "gs");
     symex->set(registers[GS].as_llvm(), symex->symbolic("gs", 64));
 
+    write_register(vexa::x64::RSP, builder->get_const_int(0, 64));
+
     // initialize stack
     vexa::value stack = builder->alloca(builder->get_int_ty(8), 4096, registers[x64::RSP].as_expr(), "stack");
-    stack_ptr = builder->inbounds_gep(builder->get_int_ty(8), stack, builder->get_const_int(4096, 64), "stack_ptr");
+    stack_ptr = builder->inbounds_gep(builder->get_int_ty(8), stack, builder->get_const_int(2048, 64), "stack_ptr");
     original_sp = registers[x64::RSP];
 
     init_handlers();
@@ -295,8 +297,10 @@ bool vexa::x64::cpu64::is_stack_access(vexa::value addr)
     z3::expr addr_expr = addr.as_expr();
     z3::expr sp_expr = original_sp.as_expr();
 
+    /*
     if (addr_expr.is_numeral())
         return false;
+        */
 
     // if addr == sp
     if (z3::eq(addr_expr, sp_expr))
@@ -358,6 +362,8 @@ std::pair<vexa::value, vexa::value> vexa::x64::cpu64::resolve_indirect_jmp(vexa:
     }
 
 fail:
+    std::cout << "r13 :" << read_register(x64::R13).as_expr() << std::endl;
+    std::cout << "rax :" << v.as_expr() << std::endl;
     THROW("failed to resolve indirect jump");
 }
 
