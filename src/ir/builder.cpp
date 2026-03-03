@@ -19,10 +19,16 @@ llvm::Function *vexa::ir::builder::create_function(std::string name, std::vector
     return _function;
 }
 
-vexa::value vexa::ir::builder::symvar(int param_idx, std::string name)
+vexa::value vexa::ir::builder::argument(int param_idx, std::string name)
 {
     llvm::Argument *arg = function->getArg(param_idx);
     arg->setName(name);
+
+    // if this function called multiple times with same param id,
+    // we dont assign any new symbolic expression for it
+    // in vexa::value, it checks if it already has a value
+    // and if so, doesnt update with new one
+    // so its fine to call this function with same param ids
     vexa::value val(arg, DL,
                     symex->symbolic(name, DL->getTypeSizeInBits(arg->getType())), symex);
     return val;
@@ -133,10 +139,16 @@ void vexa::ir::builder::normalize(vexa::value &lhs, vexa::value &rhs, bool sign_
         rhs = resize(rhs, max_bitw, sign_extend);
 }
 
-vexa::value vexa::ir::builder::alloca(llvm::Type *ty, uint64_t size, z3::expr symbol, std::string name)
+vexa::value vexa::ir::builder::alloca(llvm::Type *ty, z3::expr symbol, std::string name, uint64_t arraySize)
 {
-    llvm::AllocaInst* allocated = CreateAlloca(ty, get_const_int(size, 64).as_llvm(), name);
+    llvm::AllocaInst* allocated = CreateAlloca(ty, get_const_int(arraySize, 64).as_llvm(), name);
     return vexa::value(allocated, DL, symbol, symex);
+}
+
+vexa::value vexa::ir::builder::alloca(llvm::Type* ty, std::string name, uint64_t arraySize)
+{
+    llvm::AllocaInst* allocated = CreateAlloca(ty, get_const_int(arraySize, 64).as_llvm(), name);
+    return vexa::value(allocated, DL, symex->symbolic(name, DL->getTypeSizeInBits(ty)), symex);
 }
 
 #define PTR_TYPE() llvm::PointerType::getUnqual(*context->llvm_context)

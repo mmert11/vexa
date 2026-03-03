@@ -22,16 +22,16 @@ std::vector<uint8_t> vexa::ir::recompiler::recompile(vexa::arch arch, bool optim
     std::string Error;
     auto Target = llvm::TargetRegistry::lookupTarget(TripleStr, Error);
     if (!Target) {
-        THROW("target is null! but why?");
+        THROW("target is null!");
     }
 
     llvm::TargetOptions opt;
     auto RM = llvm::Reloc::Model::PIC_;
     std::unique_ptr<llvm::TargetMachine> TM(
         Target->createTargetMachine(TripleStr, "generic", "", opt, RM, std::nullopt,
-            optimize ?
-            llvm::CodeGenOptLevel::Aggressive :
-            llvm::CodeGenOptLevel::None
+            optimize
+            ? llvm::CodeGenOptLevel::Aggressive
+            : llvm::CodeGenOptLevel::None
         )
     );
 

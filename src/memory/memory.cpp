@@ -19,9 +19,15 @@ std::pair<std::shared_ptr<z3::expr>, bool> vexa::memory::get_if_written_before(z
 
     for (auto& it : symbolic_memory)
     {
+        if (z3::eq(addr.simplify(), it.first->simplify()))
+            return {it.first, true};
+        
+        continue;
         s.add(addr != *it.first);
         if (s.check() == z3::unsat)
             return {it.first, true};
+
+        s.reset();
     }
 
     return {std::make_shared<z3::expr>(addr), false};
@@ -63,7 +69,6 @@ z3::expr vexa::memory::read(z3::expr addr, int size)
     if (addr.is_numeral())
     {
         uint64_t const_addr = addr.as_uint64() + (size / 8) - 1;
-        //std::cout << "read " << std::hex << const_addr << std::endl;
 
         z3::expr val_expr = concrete_memory.count(const_addr)
                             ? *concrete_memory[const_addr]
@@ -89,9 +94,9 @@ z3::expr vexa::memory::read(z3::expr addr, int size)
             std::shared_ptr<z3::expr> val_expr = symbolic_memory[address];
             for (int i = (size / 8) - 2; i >= 0; i--)
             {
-                auto [next_address, next_flag] = get_if_written_before(addr + context->z3_context->bv_val(i, 64));
-                z3::expr v = next_flag
-                                ? *symbolic_memory[next_address]
+                auto [address2, flag2] = get_if_written_before(addr + context->z3_context->bv_val(i, 64));
+                z3::expr v = flag2
+                                ? *symbolic_memory[address2]
                                 : context->z3_context->bv_const("read_", 8);
                 val_expr = std::make_shared<z3::expr>(z3::concat(*val_expr, v));
             }
@@ -99,13 +104,13 @@ z3::expr vexa::memory::read(z3::expr addr, int size)
         }
         else
         {
-            z3::expr val_expr = context->z3_context->bv_const("read_", 8);
+            z3::expr val_expr = context->z3_context->bv_const("unk_read", 8);
             for (int i = (size / 8) - 2; i >= 0; i--)
             {
-                auto [next_address, next_flag] = get_if_written_before(addr + context->z3_context->bv_val(i, 64));
-                z3::expr v = next_flag
-                                ? *symbolic_memory[next_address]
-                                : context->z3_context->bv_const("read_", 8);
+                auto [address2, flag2] = get_if_written_before(addr + context->z3_context->bv_val(i, 64));
+                z3::expr v = flag2
+                                ? *symbolic_memory[address2]
+                                : context->z3_context->bv_const("unk_read", 8);
                 val_expr = z3::concat(val_expr, v);
             }
             return val_expr.simplify();

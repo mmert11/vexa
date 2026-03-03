@@ -66,9 +66,7 @@ void vexa::x64::cpu64::write_operand(ZydisDecodedOperand operand, vexa::value v)
         vexa::value ptr;
 
         if (is_stack_access(address))
-        {
-            ptr = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr, address, "stack_access");
-        }
+            ptr = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr, address, "stack_write_ptr");
         else
             ptr = builder->inttoptr(address, "ptr");
         
@@ -100,7 +98,7 @@ vexa::value vexa::x64::cpu64::read_operand(ZydisDisassembledInstruction instruct
         vexa::value ptr;
 
         if (is_stack_access(address))
-            ptr = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr, address, "mem_operand");
+            ptr = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr, address, "stack_read_ptr");
         else
             ptr = builder->inttoptr(address, "ptr");
 
@@ -282,11 +280,9 @@ semantic(CMP)
     CATCH()
 }
 
-int counter = 0;
 semantic(JMP)
 {
     TRY()
-    std::cout << "counter: " << std::dec << counter++ << std::endl;
     if (instruction.operands[0].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
     {
         auto resolved_addr = resolve_imm_address(instruction);
@@ -296,14 +292,12 @@ semantic(JMP)
     vexa::value op1 = read_operand(instruction, 0);
     if (op1.is_concrete()) // means this is an unconditional jump
     {
-        std::cout << op1.as_expr() << std::endl;
         // if destination address is 0, we assume it is unreachable
         if (op1.as_uint64() == 0)
             builder->unreachable();
         return op1;
     }
 
-    //std::cout << op1.as_expr() << std::endl;
     // conditional indirect jump
     auto [t, f] = resolve_indirect_jmp(op1);
     vexa::value cond = builder->cmpeq(op1, t, "indr_cond");
@@ -621,7 +615,10 @@ semantic(ROL)
 semantic(RET)
 {
     TRY()
-    builder->ret(read_register(x64::RAX));
+
+    // moved into the cpu64::run
+    //builder->ret(read_register(x64::RAX));
+
     return builder->get_const_int(0, 64);
     CATCH()
 }

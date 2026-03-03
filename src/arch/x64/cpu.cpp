@@ -44,24 +44,41 @@ vexa::x64::cpu64::cpu64(
     llvm::BasicBlock *entry_bb = builder->basic_block("entry");
     builder->set_ip(entry_bb);
 
-    // rename the registers (rax, rbx, rflags etc.)
+    // rename the arguments (rax, rbx, rflags etc.)
     for (auto &reg : llvm_register_table)
     {
-        vexa::value var = builder->symvar(reg.second, getRegisterStr(reg.first));
-        registers[reg.first] = var;
+        // get the register from function arguments
+        vexa::value var = builder->argument(reg.second, getRegisterStr(reg.first));
+        // allocate a 64 bits space for it
+        vexa::value alloca = builder->alloca(i64_t, symex->concrete((uint64_t)var.as_llvm(), 64), getRegisterStr(reg.first));
+        builder->store(var, alloca); // store the initial value in alloca
+        registers[reg.first] = alloca; // save the alloca pointer for further use
     }
 
-    // address space for gs segment is 256
-    llvm::Type* gs_ptr_type = llvm::PointerType::get(i64_t, 256);
-    registers[GS] = builder->load(i64_t, builder->inttoptr(builder->get_const_int(0, 64), "", gs_ptr_type), "gs");
-    symex->set(registers[GS].as_llvm(), symex->symbolic("gs", 64));
+    // also handle the rip alloca because we didnt get rip from function parameters
+    vexa::value rip = builder->get_const_int(0, 64);
+    vexa::value rip_alloca = builder->alloca(i64_t, symex->concrete((uint64_t)rip.as_llvm(), 64), getRegisterStr(x64::RIP));
+    builder->store(rip, rip_alloca);
+    registers[x64::RIP] = rip_alloca;
 
+    // initialize gs segment, address space for gs segment is 256
+    llvm::Type* gs_ptr_type = llvm::PointerType::get(i64_t, 256);
+    vexa::value gs = builder->load(i64_t, builder->inttoptr(builder->get_const_int(0, 64), "", gs_ptr_type), "gs");
+    symex->set(gs.as_llvm(), symex->symbolic("gs", 64));
+
+    // init gs segment register alloca
+    // side quest: gs alloca causes problems when its allocated with concrete values, find why
+    vexa::value gs_alloca = builder->alloca(i64_t, getRegisterStr(x64::GS));
+    builder->store(gs, gs_alloca);
+    registers[x64::GS] = gs_alloca;
+
+    // concretize stack pointer
     write_register(vexa::x64::RSP, builder->get_const_int(0, 64));
 
     // initialize stack
-    vexa::value stack = builder->alloca(builder->get_int_ty(8), 4096, registers[x64::RSP].as_expr(), "stack");
+    vexa::value stack = builder->alloca(builder->get_int_ty(8), read_register(x64::RSP).as_expr(), "stack", 4096);
     stack_ptr = builder->inbounds_gep(builder->get_int_ty(8), stack, builder->get_const_int(2048, 64), "stack_ptr");
-    original_sp = registers[x64::RSP];
+    original_sp = read_register(x64::RSP);
 
     init_handlers();
 
@@ -107,6 +124,8 @@ void vexa::x64::cpu64::run()
 
     explore_other_paths:
 
+        builder->ret(read_register(x64::RAX));
+
         if (unexplored_paths.empty())
         {
             std::cout << "[!] no more paths to explore" << std::endl;
@@ -119,8 +138,8 @@ void vexa::x64::cpu64::run()
         unexplored_paths.pop();
 
         restore_snapshot(path.ss);
-        write_register(x64::RIP, path.rip);
         builder->set_ip(path.bb);
+        write_register(x64::RIP, path.rip);
     }
 
     CATCH()
@@ -152,6 +171,7 @@ void vexa::x64::cpu64::write_register(vexa::reg_t reg, vexa::value value)
     TRY()
     register_desc r_info = REG_INFO(reg);
     vexa::value r64_vl = read_register(r_info.base_id);
+    vexa::value alloca_ptr = registers[r_info.base_id];
     std::string r_str = getRegisterStr(reg);
 
     // resize the value's bitwidth to match the target register's bitwidth
@@ -160,8 +180,8 @@ void vexa::x64::cpu64::write_register(vexa::reg_t reg, vexa::value value)
     // direct write for 64-bit registers
     if (r_info.size_bits == 64)
     {
-        registers[r_info.base_id] = value;
-        //builder->store(value, registers[r_info.base_id]);
+        //registers[r_info.base_id] = value;
+        builder->store(value, alloca_ptr);
         return;
     }
 
@@ -194,8 +214,8 @@ void vexa::x64::cpu64::write_register(vexa::reg_t reg, vexa::value value)
         final_v = builder->bor(masked_r, shifted, getRegisterStr(r_info.base_id));
     }
 
-    registers[r_info.base_id] = final_v;
-    //builder->store(final_v, registers[r_info.base_id]);
+    //registers[r_info.base_id] = final_v;
+    builder->store(final_v, alloca_ptr);
     CATCH()
 }
 
@@ -204,8 +224,9 @@ vexa::value vexa::x64::cpu64::read_register(vexa::reg_t reg)
     TRY()
 
     register_desc r_info = REG_INFO(reg);
-    vexa::value r64_vl = registers[r_info.base_id];
-    //vexa::value r64_vl = builder->load(builder->get_int_ty(64), registers[r_info.base_id], getRegisterStr(reg)); //registers[r_info.base_id];
+    // get the register's alloca pointer
+    vexa::value alloca_ptr = registers[r_info.base_id];
+    vexa::value r64_vl = builder->load(builder->get_int_ty(64), alloca_ptr, getRegisterStr(reg));
 
     vexa::value ret;
     if (r_info.size_bits == 64)
@@ -256,7 +277,7 @@ vexa::value vexa::x64::cpu64::resolve_mem_address(ZydisDecodedOperand operand)
     if (operand.mem.segment != ZYDIS_REGISTER_NONE)
     {
         if (operand.mem.segment == ZYDIS_REGISTER_GS)
-            res = registers[GS];
+            res = read_register(x64::GS);
     }
 
     // displacement
@@ -333,8 +354,8 @@ bool vexa::x64::cpu64::is_stack_access(vexa::value addr)
     z3::solver s(ctx);
 
     // use solver to prove it if its a stack access or not
-    z3::expr rsp_min = ctx.bv_val(0x0000100000000000, 64);
-    z3::expr rsp_max = ctx.bv_val(0x00007FFFFFFFF000, 64);
+    //z3::expr rsp_min = ctx.bv_val(0x0000100000000000, 64);
+    //z3::expr rsp_max = ctx.bv_val(0x00007FFFFFFFF000, 64);
     
     //s.add(original_sp.as_expr() >= rsp_min);
     //s.add(original_sp.as_expr() <= rsp_max);
@@ -362,8 +383,6 @@ std::pair<vexa::value, vexa::value> vexa::x64::cpu64::resolve_indirect_jmp(vexa:
     }
 
 fail:
-    std::cout << "r13 :" << read_register(x64::R13).as_expr() << std::endl;
-    std::cout << "rax :" << v.as_expr() << std::endl;
     THROW("failed to resolve indirect jump");
 }
 
