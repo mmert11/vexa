@@ -18,6 +18,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 find_package(LLVM REQUIRED CONFIG)
 find_package(Z3 REQUIRED CONFIG)
 find_package(ZYDIS REQUIRED CONFIG)
+find_package(Python3 REQUIRED)
 
 add_library(VEXA STATIC
     "src/vexa.cpp"
@@ -43,9 +44,17 @@ llvm_map_components_to_libnames(LLVM_LIBS
     X86CodeGen
     X86Desc
     X86Info
+    X86AsmParser
+    X86Disassembler
     MC
+    MCParser
     Target
     Object
+)
+
+target_link_libraries(VEXA 
+    PUBLIC 
+    LSiMBA++
 )
 
 target_link_libraries(VEXA PUBLIC ${LLVM_LIBS})

@@ -4,13 +4,13 @@
 #include "../arch/x64/cpu.hpp"
 #include "../memory/memory.hpp"
 
+#include <CSiMBA.h>
+#include <LLVMParser.h>
+
+#define MBA_SOLVING
+
 namespace vexa
 {
-    enum class arch
-    {
-        x86_64
-    };
-
     class engine
     {
     public:
@@ -26,6 +26,7 @@ namespace vexa
 
         void optimize();
         void print_ir();
+        std::vector<uint8_t> recompile(vexa::arch arch, bool optimize = true);
     private:
         vexa::arch _arch;
         std::shared_ptr<vexa::context> context;

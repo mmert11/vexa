@@ -1,6 +1,5 @@
 #pragma once
 #include "engine/engine.hpp"
-#include "ir/recompiler.hpp"
 
 #include <iostream>
 #include <filesystem>
@@ -83,10 +82,14 @@ try \
             THROW("assert failed: " #cond);             \
     } while (0)
 
+#include <unordered_map>
+#include <list>
+
 namespace vexa
 {
     namespace utils
     {
         std::string addr_to_str(uint64_t addr);
+
     }
 }

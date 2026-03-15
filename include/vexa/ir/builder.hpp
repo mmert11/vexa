@@ -5,11 +5,23 @@
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/IR/Dominators.h>
+#include <llvm/IR/InstIterator.h>
+#include <llvm/IR/MDBuilder.h>
+#include <llvm/IR/InlineAsm.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Passes/OptimizationLevel.h>
 #include <llvm/Analysis/ConstantFolding.h>
-#include <llvm/IR/InstIterator.h>
-#include <llvm/IR/MDBuilder.h>
+#include <llvm/Analysis/LoopInfo.h>
+#include <llvm/Transforms/Scalar/SimplifyCFG.h>
+#include <llvm/Transforms/Scalar/DCE.h>
+#include <llvm/Transforms/InstCombine/InstCombine.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/IR/LegacyPassManager.h>
+#include <llvm/TargetParser/Host.h>
+#include <llvm/TargetParser/Triple.h>
 
 #include "../context.hpp"
 #include "../value/value.hpp"
@@ -28,12 +40,20 @@ namespace vexa
             builder(std::shared_ptr<vexa::context> _context, std::shared_ptr<vexa::symex> _symex,
                 std::shared_ptr<vexa::memory> _memory);
 
-            // utils
+            //// utils
+            // recompiles the module, returns generated object code
+            // mainFunction should be set to main function that will run first
+            // if the generated code needs to be patched and runnable
+            std::vector<uint8_t> recompile(vexa::arch arch, llvm::Function* mainFunction = nullptr, bool optimize = true);
+            void inline_asm(std::string asmCode);
+            void set_section(std::string section);
+            void add_attribute(llvm::Attribute::AttrKind attr);
             llvm::Type* get_int_ty(unsigned int size);
             vexa::value get_const_int(uint64_t value, int bit_size);
             vexa::value argument(int param_idx, std::string name);
             int get_instr_count();
             void optimize();
+            void analysis();
             void unreachable();
 
             llvm::Function* create_function(std::string name, std::vector<llvm::Type*> args);
@@ -53,20 +73,15 @@ namespace vexa
             vexa::value alloca(llvm::Type* ty, z3::expr symbol, std::string name, uint64_t arraySize = 1);
             // creates an alloca, a new symbolic expression is assigned automatically
             vexa::value alloca(llvm::Type* ty, std::string name, uint64_t arraySize = 1);
-
             // translates integer type to pointer type
             vexa::value inttoptr(vexa::value v, std::string name = "", llvm::Type* ptr_ty = nullptr);
-
             // translates pointer type to integer type
             vexa::value ptrtoint(vexa::value v, uint8_t int_size, std::string name = "");
-
             // creates getelementptr inbounds
             // used for calculating memory addresses without breaking the alias analysis
             vexa::value inbounds_gep(llvm::Type* ty, vexa::value ptr, vexa::value offset, std::string name = "GEP");
-
             // reads from the given pointer, accesses to symbolic memory
             vexa::value load(llvm::Type* ty, vexa::value ptr, std::string name);
-
             // writes to the given pointer, accesses to symbolic memory
             void store(vexa::value v, vexa::value ptr);
 
@@ -78,18 +93,26 @@ namespace vexa
             vexa::value add(vexa::value lhs, vexa::value rhs, std::string name = "");
             vexa::value sub(vexa::value lhs, vexa::value rhs, std::string name = "");
             vexa::value mul(vexa::value lhs, vexa::value rhs, std::string name = "");
+            vexa::value sdiv(vexa::value lhs, vexa::value rhs, std::string name);
+            vexa::value srem(vexa::value lhs, vexa::value rhs, std::string name);
 
             // logical
             vexa::value cmpeq(vexa::value lhs, vexa::value rhs, std::string name);
+            vexa::value cmpne(vexa::value lhs, vexa::value rhs, std::string name);
+            vexa::value cmpltu(vexa::value lhs, vexa::value rhs, std::string name);
+
             vexa::value select(vexa::value cond, vexa::value lhs, vexa::value rhs, std::string name);
 
             // bit operations
             vexa::value band(vexa::value lhs, vexa::value rhs, std::string name = "");
             vexa::value bshl(vexa::value lhs, vexa::value rhs, std::string name = "");
             vexa::value bshr(vexa::value lhs, vexa::value rhs, std::string name = "");
+            vexa::value bashr(vexa::value lhs, vexa::value rhs, std::string name = "");
             vexa::value bor(vexa::value lhs, vexa::value rhs, std::string name = "");
             vexa::value bxor(vexa::value lhs, vexa::value rhs, std::string name = "");
             vexa::value bnot(vexa::value lhs, std::string name = "");
+            vexa::value bswap(vexa::value val, std::string name);
+            vexa::value cttz(vexa::value val, std::string name);
         private:
             // internal
             std::shared_ptr<vexa::context> context;

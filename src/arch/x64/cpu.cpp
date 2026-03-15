@@ -26,8 +26,7 @@ vexa::x64::cpu64::cpu64(
         {x64::R13, 13},
         {x64::R14, 14},
         {x64::R15, 15},
-        {x64::RFLAGS, 16}
-    };
+        {x64::RFLAGS, 16}};
 
     llvm::Type *i64_t = builder->get_int_ty(64);
 
@@ -51,7 +50,7 @@ vexa::x64::cpu64::cpu64(
         vexa::value var = builder->argument(reg.second, getRegisterStr(reg.first));
         // allocate a 64 bits space for it
         vexa::value alloca = builder->alloca(i64_t, symex->concrete((uint64_t)var.as_llvm(), 64), getRegisterStr(reg.first));
-        builder->store(var, alloca); // store the initial value in alloca
+        builder->store(var, alloca);   // store the initial value in alloca
         registers[reg.first] = alloca; // save the alloca pointer for further use
     }
 
@@ -62,11 +61,11 @@ vexa::x64::cpu64::cpu64(
     registers[x64::RIP] = rip_alloca;
 
     // initialize gs segment, address space for gs segment is 256
-    llvm::Type* gs_ptr_type = llvm::PointerType::get(i64_t, 256);
+    llvm::Type *gs_ptr_type = llvm::PointerType::get(i64_t, 256);
     vexa::value gs = builder->load(i64_t, builder->inttoptr(builder->get_const_int(0, 64), "", gs_ptr_type), "gs");
     symex->set(gs.as_llvm(), symex->symbolic("gs", 64));
 
-    // init gs segment register alloca
+    // allocate space for gs segment
     // side quest: gs alloca causes problems when its allocated with concrete values, find why
     vexa::value gs_alloca = builder->alloca(i64_t, getRegisterStr(x64::GS));
     builder->store(gs, gs_alloca);
@@ -76,45 +75,90 @@ vexa::x64::cpu64::cpu64(
     write_register(vexa::x64::RSP, builder->get_const_int(0, 64));
 
     // initialize stack
-    vexa::value stack = builder->alloca(builder->get_int_ty(8), read_register(x64::RSP).as_expr(), "stack", 4096);
-    stack_ptr = builder->inbounds_gep(builder->get_int_ty(8), stack, builder->get_const_int(2048, 64), "stack_ptr");
+    vexa::value stack = builder->alloca(builder->get_int_ty(8), builder->get_const_int(0, 64).as_expr(), "stack", 8192); // read_register(x64::RSP).as_expr()
+    stack_ptr = builder->inbounds_gep(builder->get_int_ty(8), stack, builder->get_const_int(4096, 64), "stack_ptr");
     original_sp = read_register(x64::RSP);
+
+    // push the a value to the stack, this is as our return flag
+    // (look at the ret handler semantics)
+    vexa::value null_ret = builder->get_const_int(0, 64);
+    vexa::value current_sp = read_register(x64::RSP);
+    vexa::value initial_sp_offset = builder->sub(
+        current_sp,
+        builder->get_const_int(8, 64),
+        "initial_sp_sub");
+
+    vexa::value init_stack_ptr = builder->inbounds_gep(
+        builder->get_int_ty(8),
+        stack_ptr,
+        initial_sp_offset,
+        "init_stack_base");
+
+    builder->store(null_ret, init_stack_ptr);
+    write_register(x64::RSP, initial_sp_offset);
 
     init_handlers();
 
     CATCH()
 }
 
+#define VCFG_RECOVERAGE
+#define VIP() memory->read(registers[x64::RIP].as_expr(), 64).as_uint64()
+
 void vexa::x64::cpu64::run()
 {
     TRY()
-    
+
     while (true)
     {
-        vexa::value rip = read_register(x64::RIP);
-        if (rip.is_symbolic())
+        z3::expr rip = memory->read(registers[x64::RIP].as_expr(), 64);
+        if (!rip.is_numeral())
+        {
+            std::cout << rip << std::endl;
             THROW("rip is symbolic!");
+        }
+
+        // means we had an internal exception, stop lifting and break
+        if (rip.as_uint64() == (uint64_t)-1)
+            break;
 
         std::vector<uint8_t> read_bytes;
         uint64_t address = rip.as_uint64();
+
+        if (rip.as_uint64() == 0)
+            goto ret;
+
+#ifdef VCFG_RECOVERAGE
+        // vm
+        if (lifted_blocks.count(current_vip) && vbranching)
+        {
+            builder->jump(lifted_blocks[current_vip]);
+            goto explore_other_paths;
+        }
+#else
         if (lifted_blocks.count(rip.as_uint64()))
         {
-            //goto explore_other_paths;
+            builder->jump(lifted_blocks[rip.as_uint64()]);
+            goto explore_other_paths;
         }
+#endif
 
         for (int i = 0; i < 15; i++)
         {
             auto byte = memory->read(symex->concrete(rip.as_uint64() + i, 64), 8);
             if (byte.is_numeral())
                 read_bytes.push_back(static_cast<uint8_t>(byte.as_uint64()));
-            else break;
+            else
+                break;
         }
 
         ZydisDisassembledInstruction instruction;
 
         if (!disassemble(read_bytes, address, instruction))
         {
-            std::cout << "[!] disassemble fail" << std::endl;
+            std::cout << "[error] disassemble fail" << std::endl;
+            std::cout << rip << std::endl;
+            builder->ret(read_register(x64::RAX));
             goto explore_other_paths;
         }
 
@@ -122,30 +166,31 @@ void vexa::x64::cpu64::run()
         lift(instruction);
         continue;
 
-    explore_other_paths:
-
+    ret:
         builder->ret(read_register(x64::RAX));
 
+    explore_other_paths:
         if (unexplored_paths.empty())
         {
-            std::cout << "[!] no more paths to explore" << std::endl;
+            std::cout << "[engine] no more paths to explore\n"
+                      << std::endl;
             break;
         }
-        
-        std::cout << "[!] exploring new path" << std::endl;
+
+        std::cout << "[engine] exploring new path" << std::endl;
 
         path_state path = unexplored_paths.top();
         unexplored_paths.pop();
 
-        restore_snapshot(path.ss);
         builder->set_ip(path.bb);
+        restore_snapshot(path.ss);
         write_register(x64::RIP, path.rip);
     }
 
     CATCH()
 }
 
-vexa::value vexa::x64::cpu64::lift(ZydisDisassembledInstruction instruction)
+void vexa::x64::cpu64::lift(ZydisDisassembledInstruction instruction)
 {
     TRY()
     auto handler = handlers.find(instruction.info.mnemonic);
@@ -153,16 +198,42 @@ vexa::value vexa::x64::cpu64::lift(ZydisDisassembledInstruction instruction)
         THROW(std::string("unimplemented handler: ") + ZydisMnemonicGetString(instruction.info.mnemonic));
 
     llvm::BasicBlock *basic_block = builder->basic_block(utils::addr_to_str(instruction.runtime_address));
-
     builder->jump(basic_block);
     builder->set_ip(basic_block);
+
+#ifdef VCFG_RECOVERAGE
+    // vm
+    if (vbranching)
+    {
+        lifted_blocks[VIP()] = basic_block;
+        lifted_count++;
+        vbranching = false;
+    }
+#else
+    lifted_blocks[memory->read(registers[x64::RIP].as_expr(), 64).as_uint64()] = basic_block;
+    lifted_count++;
+#endif
 
     vexa::value new_ip = handler->second(instruction);
     write_register(x64::RIP, new_ip);
 
-    lifted_blocks[instruction.runtime_address] = basic_block;
-    lifted_count++;
-    return new_ip;
+#ifdef VCFG_RECOVERAGE
+    // vm
+    if (vbranching)
+    {
+        uint64_t read_vip = VIP();
+        if (read_vip != current_vip)
+        {
+            current_vip = read_vip;
+        }
+        else
+        {
+            vbranching = false;
+        }
+    }
+#endif
+
+    return;
     CATCH()
 }
 
@@ -180,7 +251,7 @@ void vexa::x64::cpu64::write_register(vexa::reg_t reg, vexa::value value)
     // direct write for 64-bit registers
     if (r_info.size_bits == 64)
     {
-        //registers[r_info.base_id] = value;
+        // registers[r_info.base_id] = value;
         builder->store(value, alloca_ptr);
         return;
     }
@@ -214,7 +285,7 @@ void vexa::x64::cpu64::write_register(vexa::reg_t reg, vexa::value value)
         final_v = builder->bor(masked_r, shifted, getRegisterStr(r_info.base_id));
     }
 
-    //registers[r_info.base_id] = final_v;
+    // registers[r_info.base_id] = final_v;
     builder->store(final_v, alloca_ptr);
     CATCH()
 }
@@ -257,17 +328,17 @@ vexa::value vexa::x64::cpu64::read_register(vexa::reg_t reg)
     CATCH()
 }
 
-vexa::value vexa::x64::cpu64::resolve_imm_address(ZydisDisassembledInstruction instruction)
+vexa::value vexa::x64::cpu64::resolve_imm_address(ZydisDisassembledInstruction instruction, uint8_t operand_idx)
 {
     ZyanU64 final;
     if (instruction.operands[0].imm.is_relative)
-        ZydisCalcAbsoluteAddress(&instruction.info, &instruction.operands[0], read_register(x64::RIP).as_uint64(), &final);
+        ZydisCalcAbsoluteAddress(&instruction.info, &instruction.operands[operand_idx], read_register(x64::RIP).as_uint64(), &final);
     else
         final = instruction.operands[0].imm.value.u;
     return builder->get_const_int(final, 64);
 }
 
-vexa::value vexa::x64::cpu64::resolve_mem_address(ZydisDecodedOperand operand)
+vexa::value vexa::x64::cpu64::resolve_mem_address(ZydisDisassembledInstruction instruction, ZydisDecodedOperand operand)
 {
     TRY()
 
@@ -282,14 +353,23 @@ vexa::value vexa::x64::cpu64::resolve_mem_address(ZydisDecodedOperand operand)
 
     // displacement
     res = builder->add(res, builder->get_const_int(operand.mem.disp.value, 64), "displacement");
-    
+
     // base
     if (operand.mem.base != ZYDIS_REGISTER_NONE)
     {
-        // translate zydis register to vexa register
-        reg_t reg = zydis_register_table.at(operand.mem.base);
-        vexa::value reg_v = read_register(reg);
-        res = builder->add(res, reg_v, getRegisterStr(reg));
+        // relative address resolving
+        if (operand.mem.base == ZYDIS_REGISTER_RIP)
+        {
+            uint64_t next_rip = instruction.runtime_address + instruction.info.length;
+            res = builder->add(res, builder->get_const_int(next_rip, 64), "rip_base");
+        }
+        else
+        {
+            // translate zydis register to vexa register
+            reg_t reg = zydis_register_table.at(operand.mem.base);
+            vexa::value reg_v = read_register(reg);
+            res = builder->add(res, reg_v, getRegisterStr(reg));
+        }
     }
 
     // index
@@ -297,7 +377,7 @@ vexa::value vexa::x64::cpu64::resolve_mem_address(ZydisDecodedOperand operand)
     {
         reg_t reg = zydis_register_table.at(operand.mem.index);
         vexa::value index_v = read_register(reg);
-        
+
         // scale
         if (operand.mem.scale > 0)
         {
@@ -318,10 +398,8 @@ bool vexa::x64::cpu64::is_stack_access(vexa::value addr)
     z3::expr addr_expr = addr.as_expr();
     z3::expr sp_expr = original_sp.as_expr();
 
-    /*
-    if (addr_expr.is_numeral())
-        return false;
-        */
+    if (addr.is_concrete() && addr.as_uint64() <= 0)
+        return true;
 
     // if addr == sp
     if (z3::eq(addr_expr, sp_expr))
@@ -333,14 +411,16 @@ bool vexa::x64::cpu64::is_stack_access(vexa::value addr)
         z3::expr arg0 = addr_expr.arg(0);
         z3::expr arg1 = addr_expr.arg(1);
 
-        z3::expr* offset_expr = nullptr;
-        if (z3::eq(arg0, sp_expr)) {
+        z3::expr *offset_expr = nullptr;
+        if (z3::eq(arg0, sp_expr))
+        {
             offset_expr = &arg1;
         }
-        else if (z3::eq(arg1, sp_expr)) {
+        else if (z3::eq(arg1, sp_expr))
+        {
             offset_expr = &arg0;
         }
-        
+
         if (offset_expr && offset_expr->is_numeral())
         {
             // expr -> get_numeral_int64_t causes crash due to overflow, so we manually cast it
@@ -350,16 +430,13 @@ bool vexa::x64::cpu64::is_stack_access(vexa::value addr)
         }
     }
 
-    z3::context& ctx = addr.as_expr().ctx();
+    z3::context &ctx = addr.as_expr().ctx();
     z3::solver s(ctx);
 
     // use solver to prove it if its a stack access or not
-    //z3::expr rsp_min = ctx.bv_val(0x0000100000000000, 64);
-    //z3::expr rsp_max = ctx.bv_val(0x00007FFFFFFFF000, 64);
-    
-    //s.add(original_sp.as_expr() >= rsp_min);
-    //s.add(original_sp.as_expr() <= rsp_max);
     s.add(addr.as_expr() > original_sp.as_expr() + 32);
+
+    // std::cout << std::dec << (int64_t)addr.as_uint64() << std::endl;
 
     return s.check() == z3::unsat;
     CATCH()
@@ -377,10 +454,14 @@ std::pair<vexa::value, vexa::value> vexa::x64::cpu64::resolve_indirect_jmp(vexa:
             vexa::value(false_v, DL, symex->get(false_v), symex));
 
         if (rs.first.is_symbolic() || rs.second.is_symbolic())
+        {
             goto fail;
+        }
 
         return rs;
     }
+
+    std::cout << v.as_expr() << std::endl;
 
 fail:
     THROW("failed to resolve indirect jump");

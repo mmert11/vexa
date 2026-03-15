@@ -212,24 +212,30 @@ namespace vexa
 			void write_register(reg_t reg, vexa::value value) override;
     		vexa::value read_register(reg_t reg) override;
 		private:
-			vexa::value lift(ZydisDisassembledInstruction instruction);
+			void lift(ZydisDisassembledInstruction instruction);
 			vexa::value read_operand(ZydisDisassembledInstruction instruction, uint8_t operand_idx);
-			void write_operand(ZydisDecodedOperand op, vexa::value value);
+			void write_operand(ZydisDisassembledInstruction instruction, uint8_t operand_idx, vexa::value v);
 
 			void init_handlers();
 			std::unordered_map<ZydisMnemonic, std::function<vexa::value(ZydisDisassembledInstruction)>> handlers;
 
-			vexa::value resolve_imm_address(ZydisDisassembledInstruction instruction);
-			vexa::value resolve_mem_address(ZydisDecodedOperand operand);
+			vexa::value resolve_imm_address(ZydisDisassembledInstruction instruction, uint8_t operand_idx = 0);
+			vexa::value resolve_mem_address(ZydisDisassembledInstruction instruction, ZydisDecodedOperand operand);
 			bool is_stack_access(vexa::value addr);
 			std::pair<vexa::value, vexa::value> resolve_indirect_jmp(vexa::value v);
+			
+			bool vbranching = false;
+			uint64_t current_vip = 0;
 
 			x64dcl(MOV);
-			x64dcl(MOVSXD);
+			x64dcl(MOVZSXD);
 			x64dcl(ADD);
+			x64dcl(XADD);
 			x64dcl(SUB);
 			x64dcl(JMP);
 			x64dcl(JNZ);
+			x64dcl(JNL);
+			x64dcl(JBE);
 			x64dcl(CMP);
 			x64dcl(CMOVNZ);
 			x64dcl(AND);
@@ -243,17 +249,45 @@ namespace vexa
 			x64dcl(PUSHF);
 			x64dcl(POPF);
 			x64dcl(IMUL);
+			x64dcl(MUL);
 			x64dcl(SHL);
 			x64dcl(SHR);
+			x64dcl(SAR);
 			x64dcl(ROL);
+			x64dcl(ROR);
 			x64dcl(LEA);
 			x64dcl(NOP);
 			x64dcl(TEST);
 			x64dcl(INC);
-
-			x64dcl(ROR);
+			x64dcl(DEC);
+			x64dcl(CLC);
 			x64dcl(NEG);
+			x64dcl(XCHG);
+			x64dcl(BSF);
+			x64dcl(BTR);
+			x64dcl(BTC);
+			x64dcl(STC);
+			x64dcl(BT);
+			x64dcl(ENDBR64);
+			x64dcl(CALL);
+			x64dcl(BSWAP);
+			x64dcl(JZ);
+			x64dcl(JLE);
+			x64dcl(JNLE);
+			x64dcl(JNS);
+			x64dcl(SETB);
 			x64dcl(SETZ);
+			x64dcl(SETNBE);
+			x64dcl(IDIV);
+			x64dcl(JNB);
+			x64dcl(JNBE);
+			x64dcl(LEAVE);
+			x64dcl(SETL);
+			x64dcl(JL);
+			x64dcl(SETNL);
+			x64dcl(JS);
+			x64dcl(SETLE);
+
 			x64dcl(SETNZ);
 
 			const std::map<ZydisRegister, reg_t> zydis_register_table = {

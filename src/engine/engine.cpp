@@ -16,6 +16,12 @@ vexa::engine::engine(vexa::arch arch) : _arch(arch)
     else
         THROW("only x86_64 is supported");
 
+#ifdef _WIN32
+    LSiMBA::PythonPath = "py";
+#else
+    LSiMBA::PythonPath = "python3";
+#endif
+
     CATCH()
 }
 
@@ -38,21 +44,39 @@ void vexa::engine::optimize()
 {
     builder->optimize();
     ir.clear();
-    
+
+#ifdef MBA_SOLVING
+    std::cout << "[SiMBA++] running SiMBA & GAMBA for mba simplifying" << std::endl;
+
+    LSiMBA::UseExternalSimplifier = "/home/mert/Masaüstü/GAMBA/src/simplify_general.py";
+    LSiMBA::ShouldWalkSubAST = false;
+    LSiMBA::LLVMParser Parser(
+        context->llvm_module.get(),
+        true,                       // 2. RunParallel
+        true,                       // 3. UseFastCheck
+        false,                      // 4. IsExternal
+        true,                       // 5. DetectSimplify
+        false,                      // 6. UseCaching
+        false                        // 7. Prove
+    );
+
+    int replaced = Parser.simplify();
+    std::cout << "[SiMBA++] simplified " << replaced << " MBA expressions" << std::endl;
+#endif
+
     llvm::raw_string_ostream rso(ir);
     context->llvm_module->print(rso, nullptr);
     rso.flush();
 }
 
 #include "llvm/Support/FileSystem.h"
-void writeIRToFile(llvm::Module* module, const std::string& filename) {
+void writeIRToFile(llvm::Module *module, const std::string &filename)
+{
     std::error_code EC;
     llvm::raw_fd_ostream outFile(filename, EC, llvm::sys::fs::OF_None);
 
-    if (EC) {
-        llvm::errs() << "Dosya acilamadi: " << EC.message() << "\n";
+    if (EC)
         return;
-    }
 
     module->print(outFile, nullptr);
 }
@@ -60,9 +84,9 @@ void writeIRToFile(llvm::Module* module, const std::string& filename) {
 void vexa::engine::print_ir()
 {
     writeIRToFile(context->llvm_module.get(), "output.ll");
-    const size_t asm_count      = cpu->lifted_count;
-    const size_t ir_before_opt  = instr_count;
-    const size_t ir_after_opt   = builder->get_instr_count();
+    const size_t asm_count = cpu->lifted_count;
+    const size_t ir_before_opt = instr_count;
+    const size_t ir_after_opt = builder->get_instr_count();
 
     double expansion =
         asm_count ? double(ir_before_opt) / double(asm_count) : 0.0;
@@ -74,7 +98,7 @@ void vexa::engine::print_ir()
     std::cout << ir << "\n";
 
     std::cout << "lifted          : " << std::dec << asm_count
-              << " asm-insts in " << time << "\n";
+              << " insts in " << time << "\n";
 
     std::cout << "ir generated    : " << ir_before_opt
               << " ir-insts (×" << std::fixed << std::setprecision(2)
@@ -88,6 +112,10 @@ void vexa::engine::print_ir()
     std::cout << "VEXA · LLVM IR Lifter / Deobfuscator © github.com/mmert11\n\n";
 }
 
+std::vector<uint8_t> vexa::engine::recompile(vexa::arch arch, bool optimize)
+{
+    return builder->recompile(arch, builder->get_function(), optimize);
+}
 
 void vexa::engine::write_memory(uint64_t address, std::vector<uint8_t> buffer)
 {

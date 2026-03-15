@@ -1,4 +1,5 @@
 #include <vexa/vexa.h>
+#include <unordered_set>
 
 vexa::ir::builder::builder(std::shared_ptr<vexa::context> _context, std::shared_ptr<vexa::symex> _symex, std::shared_ptr<vexa::memory> _memory)
     : llvm::IRBuilder<>(*_context->llvm_context), context(_context), symex(_symex), memory(_memory),
@@ -17,6 +18,21 @@ llvm::Function *vexa::ir::builder::create_function(std::string name, std::vector
     llvm::Function *_function =
         llvm::Function::Create(func_type, llvm::Function::ExternalLinkage, name, context->llvm_module.get());
     return _function;
+}
+
+void vexa::ir::builder::set_section(std::string section)
+{
+    function->setSection(section);
+}
+
+void vexa::ir::builder::add_attribute(llvm::Attribute::AttrKind attr)
+{
+    function->addFnAttr(attr);
+}
+
+void vexa::ir::builder::inline_asm(std::string asmCode)
+{
+    CreateCall(llvm::InlineAsm::get(llvm::FunctionType::get(getVoidTy(), false), asmCode, "", true));
 }
 
 vexa::value vexa::ir::builder::argument(int param_idx, std::string name)
@@ -141,18 +157,18 @@ void vexa::ir::builder::normalize(vexa::value &lhs, vexa::value &rhs, bool sign_
 
 vexa::value vexa::ir::builder::alloca(llvm::Type *ty, z3::expr symbol, std::string name, uint64_t arraySize)
 {
-    llvm::AllocaInst* allocated = CreateAlloca(ty, get_const_int(arraySize, 64).as_llvm(), name);
+    llvm::AllocaInst *allocated = CreateAlloca(ty, get_const_int(arraySize, 64).as_llvm(), name);
     return vexa::value(allocated, DL, symbol, symex);
 }
 
-vexa::value vexa::ir::builder::alloca(llvm::Type* ty, std::string name, uint64_t arraySize)
+vexa::value vexa::ir::builder::alloca(llvm::Type *ty, std::string name, uint64_t arraySize)
 {
-    llvm::AllocaInst* allocated = CreateAlloca(ty, get_const_int(arraySize, 64).as_llvm(), name);
+    llvm::AllocaInst *allocated = CreateAlloca(ty, get_const_int(arraySize, 64).as_llvm(), name);
     return vexa::value(allocated, DL, symex->symbolic(name, DL->getTypeSizeInBits(ty)), symex);
 }
 
 #define PTR_TYPE() llvm::PointerType::getUnqual(*context->llvm_context)
-vexa::value vexa::ir::builder::inttoptr(vexa::value v, std::string name, llvm::Type* ptr_ty)
+vexa::value vexa::ir::builder::inttoptr(vexa::value v, std::string name, llvm::Type *ptr_ty)
 {
     llvm::Value *lv = CreateIntToPtr(v.as_llvm(), !ptr_ty ? PTR_TYPE() : ptr_ty, name);
     z3::expr zv = v.as_expr();
@@ -197,6 +213,28 @@ vexa::value vexa::ir::builder::cmpeq(vexa::value lhs, vexa::value rhs, std::stri
     return vexa::value(v, DL, b, symex);
 }
 
+vexa::value vexa::ir::builder::cmpne(vexa::value lhs, vexa::value rhs, std::string name)
+{
+    normalize(lhs, rhs);
+    llvm::Value *v = CreateICmpNE(lhs.as_llvm(), rhs.as_llvm(), name);
+
+    z3::expr ne = lhs.as_expr() != rhs.as_expr();
+    z3::expr b = z3::ite(ne, symex->concrete(1, 1), symex->concrete(0, 1));
+
+    return vexa::value(v, DL, b, symex);
+}
+
+vexa::value vexa::ir::builder::cmpltu(vexa::value lhs, vexa::value rhs, std::string name)
+{
+    normalize(lhs, rhs);
+    llvm::Value *v = CreateICmpULT(lhs.as_llvm(), rhs.as_llvm(), name);
+
+    z3::expr ult = z3::ult(lhs.as_expr(), rhs.as_expr());
+    z3::expr b = z3::ite(ult, symex->concrete(1, 1), symex->concrete(0, 1));
+
+    return vexa::value(v, DL, b, symex);
+}
+
 vexa::value vexa::ir::builder::select(vexa::value cond, vexa::value lhs, vexa::value rhs, std::string name)
 {
     normalize(lhs, rhs);
@@ -235,6 +273,22 @@ vexa::value vexa::ir::builder::mul(vexa::value lhs, vexa::value rhs, std::string
     return vexa::value(v, DL, zv, symex);
 }
 
+vexa::value vexa::ir::builder::sdiv(vexa::value lhs, vexa::value rhs, std::string name)
+{
+    normalize(lhs, rhs, true);
+    llvm::Value *v = CreateSDiv(lhs.as_llvm(), rhs.as_llvm(), name);
+    z3::expr zv = lhs.as_expr() / rhs.as_expr();
+    return vexa::value(v, DL, zv, symex);
+}
+
+vexa::value vexa::ir::builder::srem(vexa::value lhs, vexa::value rhs, std::string name)
+{
+    normalize(lhs, rhs, true);
+    llvm::Value *v = CreateSRem(lhs.as_llvm(), rhs.as_llvm(), name);
+    z3::expr zv = z3::srem(lhs.as_expr(), rhs.as_expr());
+    return vexa::value(v, DL, zv, symex);
+}
+
 vexa::value vexa::ir::builder::band(vexa::value lhs, vexa::value rhs, std::string name)
 {
     normalize(lhs, rhs);
@@ -256,6 +310,14 @@ vexa::value vexa::ir::builder::bshr(vexa::value lhs, vexa::value rhs, std::strin
     normalize(lhs, rhs);
     llvm::Value *v = CreateLShr(lhs.as_llvm(), rhs.as_llvm(), name);
     z3::expr zv = z3::lshr(lhs.as_expr(), rhs.as_expr());
+    return vexa::value(v, DL, zv, symex);
+}
+
+vexa::value vexa::ir::builder::bashr(vexa::value lhs, vexa::value rhs, std::string name)
+{
+    normalize(lhs, rhs);
+    llvm::Value *v = CreateAShr(lhs.as_llvm(), rhs.as_llvm(), name);
+    z3::expr zv = z3::ashr(lhs.as_expr(), rhs.as_expr());
     return vexa::value(v, DL, zv, symex);
 }
 
@@ -282,14 +344,280 @@ vexa::value vexa::ir::builder::bnot(vexa::value lhs, std::string name)
     return vexa::value(v, DL, zv, symex);
 }
 
+vexa::value vexa::ir::builder::cttz(vexa::value val, std::string name)
+{
+    uint32_t size = val.size();
+    llvm::Function *f = llvm::Intrinsic::getOrInsertDeclaration(
+        context->llvm_module.get(), llvm::Intrinsic::cttz, {get_int_ty(size)});
+
+    llvm::Value *lres = CreateCall(f, {val.as_llvm(), getInt1(false)}, name);
+
+    z3::expr x = val.as_expr();
+    z3::expr res_z3 = symex->symbolic(name + "_z3", size);
+
+    if (x.is_numeral())
+    {
+        uint64_t v = x.as_uint64();
+        uint64_t count = 0;
+        if (v == 0)
+            count = size;
+        else
+        {
+            while ((v & 1) == 0)
+            {
+                v >>= 1;
+                count++;
+            }
+        }
+        res_z3 = symex->concrete(count, size);
+    }
+
+    return vexa::value(lres, DL, res_z3, symex);
+}
+
+vexa::value vexa::ir::builder::bswap(vexa::value val, std::string name)
+{
+    uint32_t size = val.size();
+
+    llvm::Function *f = llvm::Intrinsic::getOrInsertDeclaration(
+        context->llvm_module.get(), llvm::Intrinsic::bswap, {get_int_ty(size)});
+
+    llvm::Value *lres = CreateCall(f, {val.as_llvm()}, name);
+
+    z3::expr x = val.as_expr();
+    z3::expr_vector args(*context->z3_context);
+
+    if (size == 16)
+    {
+        args.push_back(x.extract(7, 0));
+        args.push_back(x.extract(15, 8));
+    }
+    else if (size == 32)
+    {
+        args.push_back(x.extract(7, 0));
+        args.push_back(x.extract(15, 8));
+        args.push_back(x.extract(23, 16));
+        args.push_back(x.extract(31, 24));
+    }
+    else if (size == 64)
+    {
+        args.push_back(x.extract(7, 0));
+        args.push_back(x.extract(15, 8));
+        args.push_back(x.extract(23, 16));
+        args.push_back(x.extract(31, 24));
+        args.push_back(x.extract(39, 32));
+        args.push_back(x.extract(47, 40));
+        args.push_back(x.extract(55, 48));
+        args.push_back(x.extract(63, 56));
+    }
+
+    z3::expr res_z3 = (args.size() > 0) ? z3::concat(args) : x;
+
+    return vexa::value(lres, DL, res_z3, symex);
+}
+
 void vexa::ir::builder::ret(vexa::value v)
 {
     CreateRet(v.as_llvm());
 }
 
+// this is for detecting and analyzing loops
+// and overconcretizing the values using z3 simplifier
+// this is important for cfg recoverage and further deobfuscation
+void vexa::ir::builder::analysis()
+{
+    std::cout << "[analysis] running SimplifyCFG and DCE" << std::endl;
+    // run SimplifyCFGPass and DeadCodeEliminationPass first
+    {
+        llvm::FunctionAnalysisManager FAM;
+        llvm::PassBuilder PB;
+        PB.registerFunctionAnalyses(FAM);
+        llvm::FunctionPassManager FPM;
+        FPM.addPass(llvm::SimplifyCFGPass());
+        FPM.addPass(llvm::DCEPass());
+        FPM.run(*function, FAM);
+    }
+
+    // run llvm's LoopInfo analysis
+    llvm::DominatorTree DT(*function);
+    llvm::LoopInfo LI;
+    LI.analyze(DT);
+
+    /// OverConcretize pass, memory
+    // concretizing the values that llvm cant detect and optimize, using z3
+    // we look for every concrete store instruction in loops
+    // and mark them as in-loop writes
+    std::unordered_set<uint64_t> loop_written_addrs;
+    for (llvm::Loop *L : LI)                                        // iterate every loop
+        for (llvm::BasicBlock *BB : L->getBlocks())                 // every block
+            for (auto &I : *BB)                                     // every instruction
+                if (auto *SI = llvm::dyn_cast<llvm::StoreInst>(&I)) // if instruction is a store
+                {
+                    // get the target address
+                    llvm::Value *ptr = SI->getPointerOperand();
+                    if (!symex->is_sync(ptr)) // do we have a symbolic expresion for it? if not, skip
+                        continue;
+
+                    if (L->isLoopInvariant(SI->getValueOperand()))
+                        continue;
+
+                    // get the expr
+                    z3::expr addr = symex->get(ptr);
+                    if (addr.is_numeral()) // is it concrete?
+                        // if yes, save the address
+                        loop_written_addrs.insert(addr.as_uint64());
+                }
+
+    // we iterate every load instruction in function
+    // and check if there are any loads that can be over-concretized
+    // except for the ones that marked as in-loop writes
+    // so we dont break the loops dataflow
+    std::vector<llvm::Instruction *> dead_loads;
+    for (auto &BB : *function)
+    { // every block
+        for (auto &I : BB)
+        { // every instruction
+            auto *LI_inst = llvm::dyn_cast<llvm::LoadInst>(&I);
+            // if its not a load instruction, skip
+            if (!LI_inst)
+                continue;
+            // if its not sync with symex, skip
+            if (!symex->is_sync(LI_inst))
+                continue;
+
+            // get the target address of load instruction
+            llvm::Value *ptr = LI_inst->getPointerOperand();
+            if (symex->is_sync(ptr))
+            {
+                z3::expr ptr_addr = symex->get(ptr);
+                if (ptr_addr.is_numeral()) // if its concrete
+                {
+                    // if its written in loops before, skip
+                    if (loop_written_addrs.count(ptr_addr.as_uint64()))
+                        continue;
+
+                    // if its an external access (global memory), skip
+                    if (ptr_addr.as_uint64() > 0 && false)
+                        continue;
+                }
+            }
+
+            // get the symbolic value of load and check if its concrete
+            z3::expr val = symex->get(LI_inst);
+            if (!val.is_numeral())
+                continue;
+
+            // create it as a new constant in ir
+            llvm::Value *C = get_const_int(val.as_uint64(), val.get_sort().bv_size()).as_llvm();
+            if (C->getType() != LI_inst->getType())
+                continue;
+
+            // and replace with xload
+            LI_inst->replaceAllUsesWith(C);
+            dead_loads.push_back(LI_inst);
+        }
+    }
+    // remove all optimized loads
+    for (auto *I : dead_loads)
+        if (I->use_empty())
+            I->eraseFromParent();
+
+    std::cout << "[analysis] over-concretized memory loads: " << std::dec << dead_loads.size() << std::endl;
+
+    /// OverConcretize pass, ssa variables
+    // mark all variables in loops as tainted
+    // except for in-loop invariants
+    std::unordered_set<llvm::Value *> loopTaintedVariants;
+    for (llvm::Loop *L : LI)                            // every loop
+        for (llvm::BasicBlock *loopBB : L->getBlocks()) // every block
+            for (auto &I : *loopBB)                     // every instruction
+            {
+                if (L->isLoopInvariant(&I))
+                    continue; // if its already marked by llvm, skip
+                // mark it as tainted loop variable
+                loopTaintedVariants.insert(&I);
+            }
+
+    // taint the load variables detected by memory aliasing analysis up there
+    for (auto &BB : *function)
+        for (auto &I : BB)
+            if (auto *LD = llvm::dyn_cast<llvm::LoadInst>(&I))
+            {
+                llvm::Value *ptr = LD->getPointerOperand();
+                if (!symex->is_sync(ptr))
+                    continue;
+                z3::expr addr = symex->get(ptr);
+                if (addr.is_numeral() && loop_written_addrs.count(addr.as_uint64()))
+                    loopTaintedVariants.insert(LD);
+            }
+
+    // iterate all instructions in function
+    // and check if any of the operands of any instruction is tainted
+    // if so, taint that instruction as well
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        for (auto &BB : *function)
+            for (auto &I : BB)
+            {
+                if (loopTaintedVariants.count(&I)) // if its already tainted, skip
+                    continue;
+                for (auto &op : I.operands()) // iterate operands
+                    if (loopTaintedVariants.count(op.get()))
+                    {
+                        // if one of the operands is tainted, taint the instruction
+                        // and repeat the process until there is no more instruction to be marked
+                        if (loopTaintedVariants.insert(&I).second)
+                            changed = true;
+                        break;
+                    }
+            }
+    }
+
+    // iterate all instructions and eliminate the tainted ones
+    // then check if we have a concrete expression for it in our symex module
+    // if so, replace the instruction with new concretized constant
+    // i name this overconcretization
+    std::vector<llvm::Instruction *> toDelete;
+    for (llvm::BasicBlock &BB : *function)
+        for (auto &I : BB)
+        {
+            llvm::Value *lvalue = &I;
+            if (llvm::isa<llvm::Constant>(lvalue) || lvalue->getType()->isPointerTy() || I.isTerminator())
+                continue;
+
+            if (loopTaintedVariants.count(lvalue))
+                continue;
+
+            if (!symex->is_sync(lvalue))
+                continue;
+
+            z3::expr expression = symex->get(lvalue);
+            if (!expression.is_numeral())
+                continue;
+
+            llvm::Value *concretized = get_const_int(expression.as_uint64(), expression.get_sort().bv_size()).as_llvm();
+            lvalue->replaceAllUsesWith(concretized);
+            toDelete.push_back(&I);
+        }
+
+    // and remove the old instructions
+    for (auto *inst : toDelete)
+        if (inst->use_empty())
+            inst->eraseFromParent();
+
+    std::cout << "[analysis] over-conretized ssa variables: " << toDelete.size() << std::endl;
+}
+
 void vexa::ir::builder::optimize()
 {
     TRY()
+    // first, run analysis on function
+    analysis();
+
+    std::cout << "[optimizer] optimize the module with -Os..." << std::endl;
+    // optimize with -O3
     if (!this->context->llvm_module)
         THROW("module is null!");
 
@@ -308,7 +636,8 @@ void vexa::ir::builder::optimize()
     PB.registerLoopAnalyses(LAM);
     PB.crossRegisterProxies(LAM, FAM, CGAM, MAM);
 
-    llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
+    llvm::ModulePassManager MPM = PB.buildPerModuleDefaultPipeline(llvm::OptimizationLevel::Os);
     MPM.run(*this->context->llvm_module, MAM);
+
     CATCH()
 }

@@ -9,6 +9,11 @@
 
 namespace vexa
 {
+    enum class arch
+    {
+        x86_64
+    };
+
     class context
     {
     public:

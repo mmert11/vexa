@@ -21,7 +21,6 @@ std::pair<std::shared_ptr<z3::expr>, bool> vexa::memory::get_if_written_before(z
     {
         if (z3::eq(addr.simplify(), it.first->simplify()))
             return {it.first, true};
-        
         continue;
         s.add(addr != *it.first);
         if (s.check() == z3::unsat)
