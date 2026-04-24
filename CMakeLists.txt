@@ -16,8 +16,9 @@ endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(LLVM REQUIRED CONFIG)
-find_package(Z3 REQUIRED CONFIG)
-find_package(ZYDIS REQUIRED CONFIG)
+find_package(Z3 REQUIRED)
+find_package(ZYDIS REQUIRED)
+find_package(LIEF REQUIRED)
 find_package(Python3 REQUIRED)
 
 add_library(VEXA STATIC
@@ -26,12 +27,18 @@ add_library(VEXA STATIC
     "src/engine/engine.cpp"
     "src/ir/builder.cpp"
     "src/ir/recompiler.cpp"
+    "src/ir/pass_manager.cpp"
+    "src/passes/constant_propagation.cpp"
+    "src/passes/loop_reroll.cpp"
+    "src/passes/strength_recovery.cpp"
     "src/memory/memory.cpp"
     "src/arch/arch.cpp"
     "src/arch/x64/cpu.cpp"
     "src/arch/x64/semantics.cpp"
     "src/value/value.cpp"
+    "src/value/global.cpp"
     "src/symex/symex.cpp"
+    "src/binary/binary.cpp"
 )
 
 llvm_map_components_to_libnames(LLVM_LIBS
@@ -66,6 +73,8 @@ target_link_libraries(VEXA PRIVATE ${Z3_LIBRARIES})
 
 target_compile_definitions(VEXA PUBLIC ZYDIS_STATIC_BUILD)
 set_property(TARGET VEXA PROPERTY CXX_STANDARD 20)
+
+target_link_libraries(VEXA PUBLIC LIEF::LIEF)
 
 target_include_directories(VEXA PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>

@@ -1,6 +1,6 @@
 #include <vexa/vexa.h>
 
-vexa::symex::symex(std::shared_ptr<vexa::context> _context) : context(_context)
+vexa::symex::symex(vexa::context* _context) : context(_context)
 {}
 
 z3::expr vexa::symex::symbolic(std::string name, int size)

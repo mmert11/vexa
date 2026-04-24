@@ -18,8 +18,7 @@ namespace vexa
     {
     public:
         memory();
-        memory(std::shared_ptr<vexa::context> _context);
-        std::pair<std::shared_ptr<z3::expr>, bool> get_if_written_before(z3::expr addr);
+        memory(vexa::context* _context);
         void write(z3::expr addr, z3::expr val);
         z3::expr read(z3::expr addr, int size);
 
@@ -27,8 +26,12 @@ namespace vexa
         void restore_snapshot(mem_state ss);
 
     private:
-        std::shared_ptr<vexa::context> context;
+        vexa::context* context;
         std::unordered_map<std::shared_ptr<z3::expr>, std::shared_ptr<z3::expr>> symbolic_memory;
         std::unordered_map<uint64_t, std::shared_ptr<z3::expr>> concrete_memory;
+
+        void _write(z3::expr addr, z3::expr val);
+        z3::expr _read(z3::expr, int size);
+        std::pair<std::shared_ptr<z3::expr>, bool> get_if_written_before(z3::expr addr);
     };
 }

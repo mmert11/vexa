@@ -20,27 +20,6 @@
 #define update_cf(cf) write_register(x64::CF, cf);
 #define update_of(of) write_register(x64::OF, of);
 
-#define push64(val)                                                                                                           \
-    {                                                                                                                         \
-        vexa::value sp_offset = builder->add(read_register(x64::RSP), builder->get_const_int(-8, 64), "new_sp");              \
-        vexa::value new_sp = builder->inttoptr(sp_offset, "direct_write");                                                    \
-        if (is_stack_access(sp_offset))                                                                                       \
-            new_sp = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr, sp_offset);                                     \
-        builder->store(val, new_sp);                                                                                          \
-        write_register(x64::RSP, builder->add(read_register(x64::RSP),                                                        \
-                                              builder->get_const_int(-(instruction.info.operand_width / 8), 64), "new_rsp")); \
-    }
-
-#define pop64()({                                                                                       \
-    vexa::value current_rsp = read_register(x64::RSP);                                                   \
-    vexa::value sp_ptr = builder->inttoptr(current_rsp, "direct_read");                                  \
-    if (is_stack_access(current_rsp))                                                                    \
-        sp_ptr = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr, current_rsp, "pop_sp");        \
-    vexa::value popped_val = builder->load(builder->get_int_ty(64), sp_ptr, "popped_val");               \
-    write_register(x64::RSP, builder->add(current_rsp, builder->get_const_int(8, 64), "rsp_increment")); \
-    popped_val;                                                                                          \
-})
-
 void vexa::x64::cpu64::init_handlers()
 {
     handlers = {
@@ -107,13 +86,29 @@ void vexa::x64::cpu64::init_handlers()
         {ZYDIS_MNEMONIC_JL, lambda(JL)},
         {ZYDIS_MNEMONIC_SETNL, lambda(SETNL)},
         {ZYDIS_MNEMONIC_JS, lambda(JS)},
-        {ZYDIS_MNEMONIC_SETLE, lambda(SETLE)}};
+        {ZYDIS_MNEMONIC_SETLE, lambda(SETLE)},
+        {ZYDIS_MNEMONIC_RCL, lambda(RCL)},
+        {ZYDIS_MNEMONIC_RCR, lambda(RCR)},
+        {ZYDIS_MNEMONIC_CWD, lambda(CWD)},
+        {ZYDIS_MNEMONIC_SBB, lambda(SBB)},
+        {ZYDIS_MNEMONIC_CMOVO, lambda(CMOVO)},
+        {ZYDIS_MNEMONIC_SHRD, lambda(SHRD)},
+        {ZYDIS_MNEMONIC_BTS, lambda(BTS)},
+        {ZYDIS_MNEMONIC_BSR, lambda(BSR)},
+        {ZYDIS_MNEMONIC_LAHF, lambda(LAHF)},
+        {ZYDIS_MNEMONIC_ADC, lambda(ADC)},
+        {ZYDIS_MNEMONIC_CMC, lambda(CMC)},
+        {ZYDIS_MNEMONIC_SHLD, lambda(SHLD)},
+        {ZYDIS_MNEMONIC_SETNZ, lambda(SETNZ)}
+    };
 }
 
 void vexa::x64::cpu64::write_operand(ZydisDisassembledInstruction instruction, uint8_t operand_idx, vexa::value v)
 {
     TRY()
+
     ZydisDecodedOperand operand = instruction.operands[operand_idx];
+
     switch (operand.type)
     {
     case ZYDIS_OPERAND_TYPE_REGISTER:
@@ -129,36 +124,42 @@ void vexa::x64::cpu64::write_operand(ZydisDisassembledInstruction instruction, u
         else
             ptr = builder->inttoptr(address, "ptr");
 
-        builder->store(v, ptr);
+        vexa::value safe_v = builder->resize(v, operand.size);
+        builder->store(safe_v, ptr);
         break;
     }
     default:
         THROW(std::string("unimplemented operand type: ") + std::to_string(operand.type));
     }
+
     CATCH()
 }
 
 vexa::value vexa::x64::cpu64::read_operand(ZydisDisassembledInstruction instruction, uint8_t operand_idx)
 {
     TRY()
+
     ZydisDecodedOperand operand = instruction.operands[operand_idx];
+    vexa::value result;
+
     switch (operand.type)
     {
     case ZYDIS_OPERAND_TYPE_IMMEDIATE:
     {
         if (operand.imm.is_relative)
-            return resolve_imm_address(instruction, operand_idx);
-
-        if (operand.imm.is_signed)
-            return builder->get_const_int(operand.imm.value.s, instruction.info.operand_width);
+            result = resolve_imm_address(instruction, operand_idx);
+        else if (operand.imm.is_signed)
+            result = builder->get_const_int(operand.imm.value.s, instruction.info.operand_width);
         else
-            return builder->get_const_int(operand.imm.value.u, instruction.info.operand_width);
-    }
+            result = builder->get_const_int(operand.imm.value.u, instruction.info.operand_width);
 
+        break;
+    }
     case ZYDIS_OPERAND_TYPE_REGISTER:
     {
         vexa::value v = read_register(zydis_reg(operand.reg.value));
-        return v;
+        result = v;
+        break;
     }
     case ZYDIS_OPERAND_TYPE_MEMORY:
     {
@@ -170,12 +171,14 @@ vexa::value vexa::x64::cpu64::read_operand(ZydisDisassembledInstruction instruct
         else
             ptr = builder->inttoptr(address, "ptr");
 
-        vexa::value v = builder->load(builder->get_int_ty(instruction.info.operand_width), ptr, "load");
-        return v;
+        result = builder->load(builder->get_int_ty(operand.size), ptr, "load");
+        break;
     }
     default:
         THROW(std::string("unimplemented operand type: ") + std::to_string(operand.type));
     }
+
+    return result;
     CATCH()
 }
 
@@ -552,38 +555,23 @@ semantic(JMP)
     if (instruction.operands[0].type == ZYDIS_OPERAND_TYPE_IMMEDIATE)
     {
         auto resolved_addr = resolve_imm_address(instruction);
-        if (lifted_blocks.count(resolved_addr.as_uint64()))
-            lifted_blocks.erase_range(resolved_addr.as_uint64(), read_register(x64::RIP).as_uint64());
-        return resolved_addr;
+        return p_manager.branching(resolved_addr);
     }
 
-    vbranching = true;
+    p_manager.vbranching = true;
 
     vexa::value op1 = read_operand(instruction, 0);
     if (op1.is_concrete()) // means this is an unconditional jump
     {
         if (op1.as_uint64() == 0)
-        {
-            return builder->get_const_int((uint64_t)-1, 64);
-        }
-        return op1;
+            return builder->get_const_int((uint64_t)-1, 64); // exception signal
+        return p_manager.branching(op1);
     }
 
-    std::cout << "[engine] forking path" << std::endl;
-
     // conditional indirect jump
-    auto [t, f] = resolve_indirect_jmp(op1);
-    vexa::value cond = builder->cmpeq(op1, t, "indr_cond");
-
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(t.as_uint64()));
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(f.as_uint64()));
-
-    path_state path_s = {take_snapshot(), f, else_bb};
-    unexplored_paths.push(path_s);
-
-    builder->jump_if(cond, then_bb, else_bb);
-    builder->set_ip(then_bb);
-    return t;
+    vexa::resolved_path_t r_path = p_manager.resolve_path(op1);
+    vexa::value cond = builder->cmpeq(op1, builder->get_const_int(r_path.true_ip.as_uint64(), 64), "indr_cond");
+    return p_manager.branching(cond, r_path.true_ip, r_path.false_ip);
     CATCH()
 }
 
@@ -610,25 +598,8 @@ semantic(JNZ)
     vexa::value dest = resolve_imm_address(instruction);
     uint64_t rip = read_register(x64::RIP).as_uint64();
 
-#ifdef OPAQUE_SOLVING
-    if (zf.is_concrete())
-    {
-        printf("[simplifier] opaque predicate detected, zf: %ld\n", zf.as_uint64());
-        if (zf.as_uint64() == 0)
-        {
-            if (lifted_blocks.count(dest.as_uint64()))
-                lifted_blocks.erase_range(dest.as_uint64(), rip);
-            return dest;
-        }
-        else
-        {
-            if (lifted_blocks.count(next.as_uint64()))
-                lifted_blocks.erase_range(next.as_uint64(), rip);
-            return next;
-        }
-    }
-#endif
-
+    /*
+    // disabled
     if (false) // so we use solver to solve it
     {
         // but condition may be too complicated to be simplified
@@ -647,19 +618,10 @@ semantic(JNZ)
             return dest;
         }
     }
-
-    std::cout << "[engine] forking path" << std::endl;
+    */
 
     vexa::value cond = builder->cmpeq(zf, builder->get_const_int(0, 8), "jnz");
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(instruction.runtime_address));
-
-    path_state path_s = {take_snapshot(), next, else_bb};
-    unexplored_paths.push(path_s);
-
-    builder->jump_if(cond, then_bb, else_bb);
-    builder->set_ip(then_bb);
-    return dest;
+    return p_manager.branching(cond, dest, next);
     CATCH()
 }
 
@@ -668,46 +630,12 @@ semantic(JNL)
     TRY()
     vexa::value sf = read_register(x64::SF);
     vexa::value of = read_register(x64::OF);
-
-    vexa::value cond_val = builder->cmpeq(sf, of, "jnl_cond");
-
+    vexa::value cond = builder->cmpeq(sf, of, "jnl_cond");
     vexa::value next = next_rip();
     vexa::value dest = resolve_imm_address(instruction);
     uint64_t rip = read_register(x64::RIP).as_uint64();
 
-#ifdef OPAQUE_SOLVING
-    if (cond_val.is_concrete())
-    {
-        uint64_t res = cond_val.as_uint64();
-        printf("[simplifier] opaque predicate detected (JNL), met: %ld\n", res);
-
-        if (res != 0)
-        {
-            if (lifted_blocks.count(dest.as_uint64()))
-                lifted_blocks.erase_range(dest.as_uint64(), rip);
-            return dest;
-        }
-        else
-        {
-            if (lifted_blocks.count(next.as_uint64()))
-                lifted_blocks.erase_range(next.as_uint64(), rip);
-            return next;
-        }
-    }
-#endif
-
-    std::cout << "[engine] forking path (JNL)" << std::endl;
-
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(dest.as_uint64()));
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
-
-    path_state path_s = {take_snapshot(), next, else_bb};
-    unexplored_paths.push(path_s);
-
-    builder->jump_if(cond_val, then_bb, else_bb);
-    builder->set_ip(then_bb);
-
-    return dest;
+    return p_manager.branching(cond, dest, next);
     CATCH()
 }
 
@@ -722,26 +650,20 @@ semantic(CMOVNZ)
 
     if (cond.is_symbolic())
     {
-        llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(instruction.runtime_address));
-        llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(instruction.runtime_address));
-
-        path_state path = {take_snapshot(), next_r, else_bb};
-        unexplored_paths.push(path);
-
-        builder->jump_if(cond, then_bb, else_bb);
-        builder->set_ip(then_bb);
+        p_manager.branching(cond, next_r, next_r);
+        vexa::value sl = builder->select(cond, op2, op1, "cmovnz");
         write_operand(instruction, 0, op2);
-        return next_r;
     }
     else
     {
         vexa::value sl = builder->select(cond, op2, op1, "cmovnz");
         write_operand(instruction, 0, sl);
-        return next_r;
     }
 
+    return next_r;
     CATCH()
 }
+
 semantic(AND)
 {
     TRY()
@@ -843,7 +765,7 @@ semantic(SHL)
     // of flag calculation
     // of = is_count_zero ? old_of : c ^ last_bit_of_shifted_value
     // last_bit = result >> size - 1
-    vexa::value last_bit = builder->resize(builder->bshr(result, builder->get_const_int(size - 1, 64), "last_bit"), 1);
+    vexa::value last_bit = builder->resize(builder->bshr(result, builder->get_const_int(size - 1, size), "last_bit"), 1);
     vexa::value old_of = read_register(x64::OF);
     vexa::value of = builder->select(is_count_zero,
                                      old_of,
@@ -881,14 +803,14 @@ semantic(SHR)
     vexa::value cf_bit_idx = builder->sub(masked_count, builder->get_const_int(1, 8), "cf_idx");
     vexa::value cf_idx_clamp = builder->band(cf_bit_idx, builder->get_const_int(size - 1, 8), "cf_idx_clamp");
     vexa::value last_shifted_bit = builder->resize(builder->band(builder->bshr(dst, cf_idx_clamp, "lsb"),
-                                                                 builder->get_const_int(1, size), "lsb_and"),
-                                                   1);
+                                   builder->get_const_int(1, size), "lsb_and"),
+                                   1);
 
     vexa::value old_cf = read_register(x64::CF);
     vexa::value cf = builder->select(is_count_zero, old_cf, last_shifted_bit, "cf");
 
     vexa::value old_of = read_register(x64::OF);
-    vexa::value original_msb = builder->resize(builder->bshr(dst, builder->get_const_int(size - 1, 64), "orig_msb"), 1);
+    vexa::value original_msb = builder->resize(builder->bshr(dst, builder->get_const_int(size - 1, size), "orig_msb"), 1);
     vexa::value of = builder->select(is_count_zero, old_of, original_msb, "of");
 
     write_operand(instruction, 0, result);
@@ -898,7 +820,7 @@ semantic(SHR)
     vexa::value is_zero = builder->cmpeq(result, builder->get_const_int(0, size), "is_zero");
     write_register(x64::ZF, builder->select(is_count_zero, read_register(x64::ZF), is_zero, "zf"));
 
-    vexa::value res_msb = builder->resize(builder->bshr(result, builder->get_const_int(size - 1, 64), "res_msb"), 1);
+    vexa::value res_msb = builder->resize(builder->bshr(result, builder->get_const_int(size - 1, size), "res_msb"), 1);
     write_register(x64::SF, builder->select(is_count_zero, read_register(x64::SF), res_msb, "sf"));
 
     return next_rip();
@@ -921,8 +843,8 @@ semantic(SAR)
     vexa::value cf_bit_idx = builder->sub(masked_count, builder->get_const_int(1, 8), "cf_idx");
     vexa::value cf_idx_clamp = builder->band(cf_bit_idx, builder->get_const_int(size - 1, 8), "cf_idx_clamp");
     vexa::value last_shifted_bit = builder->resize(builder->band(builder->bshr(dst, cf_idx_clamp, "lsb"),
-                                                                 builder->get_const_int(1, size), "lsb_and"),
-                                                   1);
+                                   builder->get_const_int(1, size), "lsb_and"),
+                                   1);
 
     vexa::value old_cf = read_register(x64::CF);
     vexa::value cf = builder->select(is_count_zero, old_cf, last_shifted_bit, "cf");
@@ -937,7 +859,7 @@ semantic(SAR)
     vexa::value is_zero = builder->cmpeq(result, builder->get_const_int(0, size), "is_zero");
     write_register(x64::ZF, builder->select(is_count_zero, read_register(x64::ZF), is_zero, "zf"));
 
-    vexa::value res_msb = builder->resize(builder->bshr(result, builder->get_const_int(size - 1, 64), "res_msb"), 1);
+    vexa::value res_msb = builder->resize(builder->bshr(result, builder->get_const_int(size - 1, size), "res_msb"), 1);
     write_register(x64::SF, builder->select(is_count_zero, read_register(x64::SF), res_msb, "sf"));
 
     return next_rip();
@@ -947,26 +869,35 @@ semantic(SAR)
 semantic(ROL)
 {
     TRY()
-    vexa::value val = read_operand(instruction, 0);
+    vexa::value dst = read_operand(instruction, 0);
     vexa::value count_op = read_operand(instruction, 1);
-    uint16_t width = val.size();
+    uint32_t size = dst.size();
 
-    vexa::value mask = builder->get_const_int(width - 1, width);
-    vexa::value count = builder->band(builder->resize(count_op, width), mask, "");
-    vexa::value shl = builder->bshl(val, count, "");
-    vexa::value sub_count = builder->sub(builder->get_const_int(width, width), count, "");
-    vexa::value shr_count = builder->band(sub_count, mask, "");
-    vexa::value shr = builder->bshr(val, shr_count, "");
-    vexa::value result = builder->bor(shl, shr, "");
-    write_operand(instruction, 0, result);
+    uint32_t mask_val = (instruction.info.operand_width == 64) ? 63 : 31;
+    vexa::value count = builder->band(builder->resize(count_op, size),
+                                      builder->get_const_int(mask_val, size), "rol_count");
 
-    vexa::value cf_val = builder->extract(result, 0, 0, "new_cf");
-    write_register(x64::CF, cf_val);
+    vexa::value left = builder->bshl(dst, count, "rol_shl");
 
-    vexa::value msb = builder->extract(result, width - 1, width - 1, "msb");
-    vexa::value lsb = builder->extract(result, 0, 0, "lsb");
-    vexa::value of_val = builder->bxor(msb, lsb, "");
-    write_register(x64::OF, of_val);
+    vexa::value rev_count = builder->sub(builder->get_const_int(size, size), count, "rol_sub");
+    vexa::value rev_count_clamped = builder->band(rev_count,
+                                    builder->get_const_int(size - 1, size),
+                                    "rol_rev_clamp");
+    vexa::value right = builder->bshr(dst, rev_count_clamped, "rol_shr");
+    vexa::value res = builder->bor(left, right, "rol_res");
+
+    vexa::value new_cf = builder->resize(
+                             builder->band(res, builder->get_const_int(1, size)), 1);
+
+    vexa::value msb = builder->bshr(res, builder->get_const_int(size - 1, size));
+    vexa::value of_val = builder->bxor(new_cf, builder->resize(msb, 1));
+
+    vexa::value is_zero = builder->cmpeq(count,
+                                         builder->get_const_int(0, size), "rol_count_zero");
+
+    write_operand(instruction, 0, builder->select(is_zero, dst, res, "rol_dst"));
+    update_cf(builder->select(is_zero, read_register(x64::CF), new_cf, "rol_cf"));
+    update_of(builder->select(is_zero, read_register(x64::OF), of_val, "rol_of"));
 
     return next_rip();
     CATCH()
@@ -975,29 +906,37 @@ semantic(ROL)
 semantic(ROR)
 {
     TRY()
-    vexa::value val = read_operand(instruction, 0);
+    vexa::value dst = read_operand(instruction, 0);
     vexa::value count_op = read_operand(instruction, 1);
-    uint16_t width = val.size();
+    uint32_t size = dst.size();
 
-    vexa::value mask = builder->get_const_int(width - 1, width);
-    vexa::value count = builder->band(builder->resize(count_op, width), mask, "masked_count");
+    uint32_t mask_val = (instruction.info.operand_width == 64) ? 63 : 31;
+    vexa::value count = builder->band(builder->resize(count_op, size),
+                                      builder->get_const_int(mask_val, size), "ror_count");
 
-    vexa::value shr = builder->bshr(val, count, "shr");
+    vexa::value right = builder->bshr(dst, count, "ror_shr");
 
-    vexa::value sub_count = builder->sub(builder->get_const_int(width, width), count, "");
-    vexa::value shl_count = builder->band(sub_count, mask, "");
-    vexa::value shl = builder->bshl(val, shl_count, "shl");
+    vexa::value rev_count = builder->sub(builder->get_const_int(size, size), count, "ror_sub");
+    vexa::value rev_count_clamped = builder->band(rev_count,
+                                    builder->get_const_int(size - 1, size),
+                                    "ror_rev_clamp");
+    vexa::value left = builder->bshl(dst, rev_count_clamped, "ror_shl");
+    vexa::value res = builder->bor(left, right, "ror_res");
 
-    vexa::value result = builder->bor(shr, shl, "ror_result");
-    write_operand(instruction, 0, result);
+    vexa::value new_cf = builder->resize(
+                             builder->bshr(res, builder->get_const_int(size - 1, size)), 1);
 
-    vexa::value cf_val = builder->extract(result, width - 1, width - 1, "new_cf");
-    write_register(x64::CF, cf_val);
+    vexa::value bit_n = builder->bshr(res, builder->get_const_int(size - 1, size));
+    vexa::value bit_n_1 = builder->bshr(res, builder->get_const_int(size - 2, size));
+    vexa::value of_val = builder->bxor(builder->resize(bit_n, 1),
+                                       builder->resize(bit_n_1, 1));
 
-    vexa::value msb = builder->extract(result, width - 1, width - 1, "msb");
-    vexa::value msb_minus_1 = builder->extract(result, width - 2, width - 2, "msb_minus_1");
-    vexa::value of_val = builder->bxor(msb, msb_minus_1, "of_xor");
-    write_register(x64::OF, of_val);
+    vexa::value is_zero = builder->cmpeq(count,
+                                         builder->get_const_int(0, size), "ror_count_zero");
+
+    write_operand(instruction, 0, builder->select(is_zero, dst, res, "ror_dst"));
+    update_cf(builder->select(is_zero, read_register(x64::CF), new_cf, "ror_cf"));
+    update_of(builder->select(is_zero, read_register(x64::OF), of_val, "ror_of"));
 
     return next_rip();
     CATCH()
@@ -1006,9 +945,16 @@ semantic(ROR)
 semantic(RET)
 {
     TRY()
-    vexa::value next_rip = pop64();
-    vbranching = true;
-    return next_rip;
+    p_manager.vbranching = true;
+    vexa::value address = pop64();
+    if (address.is_concrete()) // means this is an unconditional jump
+    {
+        return p_manager.branching(address);
+    }
+
+    vexa::resolved_path_t r_path = p_manager.resolve_path(address);
+    vexa::value cond = builder->cmpeq(address, builder->get_const_int(r_path.true_ip.as_uint64(), 64), "indr_cond");
+    return p_manager.branching(cond, r_path.true_ip, r_path.false_ip);
     CATCH()
 }
 
@@ -1343,43 +1289,12 @@ semantic(JBE)
     vexa::value zf = read_register(x64::ZF);
 
     vexa::value cond_val = builder->bor(cf, zf, "jbe_cond");
-
     vexa::value next = next_rip();
     vexa::value dest = resolve_imm_address(instruction);
     uint64_t rip = read_register(x64::RIP).as_uint64();
 
-    if (cond_val.is_concrete())
-    {
-        uint64_t res = cond_val.as_uint64();
-        printf("[simplifier] opaque predicate detected, met: %ld\n", res);
-
-        if (res != 0)
-        {
-            if (lifted_blocks.count(dest.as_uint64()))
-                lifted_blocks.erase_range(dest.as_uint64(), rip);
-            return dest;
-        }
-        else
-        {
-            if (lifted_blocks.count(next.as_uint64()))
-                lifted_blocks.erase_range(next.as_uint64(), rip);
-            return next;
-        }
-    }
-
-    std::cout << "[engine] forking path (JBE)" << std::endl;
-
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(dest.as_uint64()));
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
-
-    path_state path_s = {take_snapshot(), next, else_bb};
-    unexplored_paths.push(path_s);
-
     vexa::value cond = builder->cmpne(cond_val, builder->get_const_int(0, cond_val.size()), "jbe_cmp");
-    builder->jump_if(cond, then_bb, else_bb);
-    builder->set_ip(then_bb);
-
-    return dest;
+    return p_manager.branching(cond, dest, next);
     CATCH()
 }
 
@@ -1391,40 +1306,8 @@ semantic(JZ)
     vexa::value dest = resolve_imm_address(instruction);
     uint64_t rip = read_register(x64::RIP).as_uint64();
 
-#ifdef OPAQUE_SOLVING
-    if (zf.is_concrete())
-    {
-        printf("[simplifier] opaque predicate detected (JZ), zf: %ld\n", zf.as_uint64());
-
-        if (zf.as_uint64() != 0)
-        {
-            if (lifted_blocks.count(dest.as_uint64()))
-                lifted_blocks.erase_range(dest.as_uint64(), rip);
-            return dest;
-        }
-        else
-        {
-            if (lifted_blocks.count(next.as_uint64()))
-                lifted_blocks.erase_range(next.as_uint64(), rip);
-            return next;
-        }
-    }
-#endif
-
-    std::cout << "[engine] forking path (JZ)" << std::endl;
-
     vexa::value cond = builder->cmpeq(zf, builder->get_const_int(1, 8), "jz_cond");
-
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(dest.as_uint64()));
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
-
-    path_state path_s = {take_snapshot(), next, else_bb};
-    unexplored_paths.push(path_s);
-
-    builder->jump_if(cond, then_bb, else_bb);
-    builder->set_ip(then_bb);
-
-    return dest;
+    return p_manager.branching(cond, dest, next);
     CATCH()
 }
 
@@ -1442,40 +1325,8 @@ semantic(JLE)
     vexa::value sf_xor_of = builder->bxor(sf, of, "jle_sf_xor_of");
     vexa::value cond_val = builder->bor(zf, sf_xor_of, "jle_cond");
 
-#ifdef OPAQUE_SOLVING
-    if (cond_val.is_concrete())
-    {
-        uint64_t res = cond_val.as_uint64();
-        printf("[simplifier] opaque predicate detected (JLE), met: %ld\n", res);
-
-        if (res != 0)
-        {
-            if (lifted_blocks.count(dest.as_uint64()))
-                lifted_blocks.erase_range(dest.as_uint64(), rip);
-            return dest;
-        }
-        else
-        {
-            if (lifted_blocks.count(next.as_uint64()))
-                lifted_blocks.erase_range(next.as_uint64(), rip);
-            return next;
-        }
-    }
-#endif
-
-    std::cout << "[engine] forking path (JLE)" << std::endl;
-
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(dest.as_uint64()));
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
-
-    path_state path_s = {take_snapshot(), next, else_bb};
-    unexplored_paths.push(path_s);
-
     vexa::value cond = builder->cmpne(cond_val, builder->get_const_int(0, cond_val.size()), "jle_final_cmp");
-    builder->jump_if(cond, then_bb, else_bb);
-    builder->set_ip(then_bb);
-
-    return dest;
+    return p_manager.branching(cond, dest, next);
     CATCH()
 }
 
@@ -1494,40 +1345,8 @@ semantic(JNLE)
     vexa::value zf_is_zero = builder->cmpeq(zf, builder->get_const_int(0, zf.size()), "jnle_zf_zero");
     vexa::value cond_val = builder->band(sf_eq_of, zf_is_zero, "jnle_cond");
 
-#ifdef OPAQUE_SOLVING
-    if (cond_val.is_concrete())
-    {
-        uint64_t res = cond_val.as_uint64();
-        printf("[simplifier] opaque predicate detected (JNLE), met: %ld\n", res);
-
-        if (res != 0)
-        {
-            if (lifted_blocks.count(dest.as_uint64()))
-                lifted_blocks.erase_range(dest.as_uint64(), rip);
-            return dest;
-        }
-        else
-        {
-            if (lifted_blocks.count(next.as_uint64()))
-                lifted_blocks.erase_range(next.as_uint64(), rip);
-            return next;
-        }
-    }
-#endif
-
-    std::cout << "[engine] forking path (JNLE)" << std::endl;
-
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(dest.as_uint64()));
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
-
-    path_state path_s = {take_snapshot(), next, else_bb};
-    unexplored_paths.push(path_s);
-
     vexa::value cond = builder->cmpne(cond_val, builder->get_const_int(0, cond_val.size()), "jnle_final_cmp");
-    builder->jump_if(cond, then_bb, else_bb);
-    builder->set_ip(then_bb);
-
-    return dest;
+    return p_manager.branching(cond, dest, next);
     CATCH()
 }
 
@@ -1540,41 +1359,8 @@ semantic(JNS)
     vexa::value dest = resolve_imm_address(instruction);
     uint64_t rip = read_register(x64::RIP).as_uint64();
 
-#ifdef OPAQUE_SOLVING
-    if (sf.is_concrete())
-    {
-        uint64_t sf_val = sf.as_uint64();
-        printf("[simplifier] opaque predicate detected (JNS), sf: %ld\n", sf_val);
-
-        if (sf_val == 0)
-        {
-            if (lifted_blocks.count(dest.as_uint64()))
-                lifted_blocks.erase_range(dest.as_uint64(), rip);
-            return dest;
-        }
-        else
-        {
-            if (lifted_blocks.count(next.as_uint64()))
-                lifted_blocks.erase_range(next.as_uint64(), rip);
-            return next;
-        }
-    }
-#endif
-
-    std::cout << "[engine] forking path (JNS)" << std::endl;
-
     vexa::value cond = builder->cmpeq(sf, builder->get_const_int(0, sf.size()), "jns_cond");
-
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(dest.as_uint64()));
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
-
-    path_state path_s = {take_snapshot(), next, else_bb};
-    unexplored_paths.push(path_s);
-
-    builder->jump_if(cond, then_bb, else_bb);
-    builder->set_ip(then_bb);
-
-    return dest;
+    return p_manager.branching(cond, dest, next);
     CATCH()
 }
 
@@ -1702,40 +1488,7 @@ semantic(JNB)
     uint64_t rip = read_register(x64::RIP).as_uint64();
 
     vexa::value cond = builder->cmpeq(cf, builder->get_const_int(0, cf.size()), "jnb_cond");
-
-#ifdef OPAQUE_SOLVING
-    if (cond.is_concrete())
-    {
-        uint64_t res = cond.as_uint64();
-        printf("[simplifier] opaque predicate detected (JNB), taken: %ld\n", res);
-
-        if (res != 0)
-        {
-            if (lifted_blocks.count(dest.as_uint64()))
-                lifted_blocks.erase_range(dest.as_uint64(), rip);
-            return dest;
-        }
-        else
-        {
-            if (lifted_blocks.count(next.as_uint64()))
-                lifted_blocks.erase_range(next.as_uint64(), rip);
-            return next;
-        }
-    }
-#endif
-
-    std::cout << "[engine] forking path (JNB)" << std::endl;
-
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(dest.as_uint64()));
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
-
-    path_state path_s = {take_snapshot(), next, else_bb};
-    unexplored_paths.push(path_s);
-
-    builder->jump_if(cond, then_bb, else_bb);
-    builder->set_ip(then_bb);
-
-    return dest;
+    return p_manager.branching(cond, dest, next);
     CATCH()
 }
 
@@ -1744,48 +1497,13 @@ semantic(JNBE)
     TRY()
     vexa::value cf = read_register(x64::CF);
     vexa::value zf = read_register(x64::ZF);
-
     vexa::value next = next_rip();
     vexa::value dest = resolve_imm_address(instruction);
     uint64_t rip = read_register(x64::RIP).as_uint64();
-
     vexa::value cf_zero = builder->cmpeq(cf, builder->get_const_int(0, cf.size()), "cf_is_zero");
     vexa::value zf_zero = builder->cmpeq(zf, builder->get_const_int(0, zf.size()), "zf_is_zero");
     vexa::value cond = builder->band(cf_zero, zf_zero, "jnbe_cond");
-
-#ifdef OPAQUE_SOLVING
-    if (cond.is_concrete())
-    {
-        uint64_t res = cond.as_uint64();
-        printf("[simplifier] opaque predicate detected (JNBE), taken: %ld\n", res);
-
-        if (res != 0)
-        {
-            if (lifted_blocks.count(dest.as_uint64()))
-                lifted_blocks.erase_range(dest.as_uint64(), rip);
-            return dest;
-        }
-        else
-        {
-            if (lifted_blocks.count(next.as_uint64()))
-                lifted_blocks.erase_range(next.as_uint64(), rip);
-            return next;
-        }
-    }
-#endif
-
-    std::cout << "[engine] forking path (JNBE)" << std::endl;
-
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(dest.as_uint64()));
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
-
-    path_state path_s = {take_snapshot(), next, else_bb};
-    unexplored_paths.push(path_s);
-
-    builder->jump_if(cond, then_bb, else_bb);
-    builder->set_ip(then_bb);
-
-    return dest;
+    return p_manager.branching(cond, dest, next);
     CATCH()
 }
 
@@ -1833,40 +1551,7 @@ semantic(JL)
     vexa::value exercised_of = read_register(x64::OF);
     vexa::value cond_i64 = builder->bxor(sf, exercised_of, "jl_cond_i64");
     vexa::value cond = builder->cmpne(cond_i64, builder->get_const_int(0, 64), "jl_cond_i1");
-
-#ifdef OPAQUE_SOLVING
-    if (cond.is_concrete())
-    {
-        uint64_t res = cond.as_uint64();
-        std::cout << "[engine] opaque predicate detected (JL), taken: " << res << std::endl;
-
-        if (res != 0)
-        {
-            if (lifted_blocks.count(dest.as_uint64()))
-                lifted_blocks.erase_range(dest.as_uint64(), next.as_uint64());
-            return dest;
-        }
-        else
-        {
-            if (lifted_blocks.count(next.as_uint64()))
-                lifted_blocks.erase_range(next.as_uint64(), next.as_uint64());
-            return next;
-        }
-    }
-#endif
-
-    std::cout << "[engine] forking path (JL)" << std::endl;
-
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(dest.as_uint64()));
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
-
-    path_state path_s = {take_snapshot(), next, else_bb};
-    unexplored_paths.push(path_s);
-
-    builder->jump_if(cond, then_bb, else_bb);
-    builder->set_ip(then_bb);
-
-    return dest;
+    return p_manager.branching(cond, dest, next);
     CATCH()
 }
 
@@ -1892,43 +1577,9 @@ semantic(JS)
     TRY()
     vexa::value dest = read_operand(instruction, 0);
     vexa::value next = next_rip();
-
     vexa::value sf = read_register(x64::SF);
     vexa::value cond = builder->cmpne(sf, builder->get_const_int(0, sf.size()), "js_cond");
-
-#ifdef OPAQUE_SOLVING
-    if (cond.is_concrete())
-    {
-        uint64_t res = cond.as_uint64();
-        std::cout << "[engine] opaque predicate detected (JL), taken: " << res << std::endl;
-
-        if (res != 0)
-        {
-            if (lifted_blocks.count(dest.as_uint64()))
-                lifted_blocks.erase_range(dest.as_uint64(), next.as_uint64());
-            return dest;
-        }
-        else
-        {
-            if (lifted_blocks.count(next.as_uint64()))
-                lifted_blocks.erase_range(next.as_uint64(), next.as_uint64());
-            return next;
-        }
-    }
-#endif
-
-    std::cout << "[engine] forking path (JS)" << std::endl;
-
-    llvm::BasicBlock *then_bb = builder->basic_block(utils::addr_to_str(dest.as_uint64()));
-    llvm::BasicBlock *else_bb = builder->basic_block(utils::addr_to_str(next.as_uint64()));
-
-    path_state path_s = {take_snapshot(), next, else_bb};
-    unexplored_paths.push(path_s);
-
-    builder->jump_if(cond, then_bb, else_bb);
-    builder->set_ip(then_bb);
-
-    return dest;
+    return p_manager.branching(cond, dest, next);
     CATCH()
 }
 
@@ -1945,6 +1596,356 @@ semantic(SETLE)
     vexa::value result_byte = builder->resize(final_cond, 8);
 
     write_operand(instruction, 0, result_byte);
+    return next_rip();
+    CATCH()
+}
+
+semantic(RCL)
+{
+    TRY()
+    vexa::value dst = read_operand(instruction, 0);
+    vexa::value count_op = read_operand(instruction, 1);
+    vexa::value cf = read_register(x64::CF);
+    uint32_t size = dst.size();
+
+    uint32_t mask_val = (instruction.info.operand_width == 64) ? 63 : 31;
+    vexa::value count = builder->band(builder->resize(count_op, 32), builder->get_const_int(mask_val, 32), "rcl_mask");
+
+    uint32_t combined_size = size + 1;
+    vexa::value real_count = builder->urem(count, builder->get_const_int(combined_size, 32), "rcl_mod");
+
+    vexa::value cf_ext = builder->resize(cf, combined_size);
+    vexa::value dst_ext = builder->resize(dst, combined_size);
+    vexa::value combined = builder->bor(
+                               builder->bshl(dst_ext, builder->get_const_int(1, combined_size), "rcl_shift"), cf_ext, "rcl_combined");
+
+    vexa::value left = builder->bshl(combined, builder->resize(real_count, combined_size));
+    vexa::value rev_count = builder->sub(builder->get_const_int(combined_size, 32), real_count);
+    vexa::value right = builder->bshr(combined, builder->resize(rev_count, combined_size));
+    vexa::value rotated = builder->bor(left, right);
+
+    vexa::value new_cf = builder->resize(builder->band(rotated, builder->get_const_int(1, combined_size)), 1);
+    vexa::value res = builder->resize(
+                          builder->bshr(rotated, builder->get_const_int(1, combined_size), "rcl_res_shr"), size);
+
+    vexa::value is_zero = builder->cmpeq(count, builder->get_const_int(0, 32));
+
+    write_operand(instruction, 0, builder->select(is_zero, dst, res));
+    update_cf(builder->select(is_zero, cf, new_cf));
+
+    vexa::value res_msb = builder->resize(builder->bshr(res, builder->get_const_int(size - 1, size)), 1);
+    vexa::value of_val = builder->bxor(res_msb, new_cf);
+    update_of(builder->select(is_zero, read_register(x64::OF), of_val));
+
+    return next_rip();
+    CATCH()
+}
+
+semantic(RCR)
+{
+    TRY()
+    vexa::value dst = read_operand(instruction, 0);
+    vexa::value count_op = read_operand(instruction, 1);
+    vexa::value cf = read_register(x64::CF);
+    uint32_t size = dst.size();
+
+    uint32_t mask_val = (instruction.info.operand_width == 64) ? 63 : 31;
+    vexa::value count = builder->band(builder->resize(count_op, 32), builder->get_const_int(mask_val, 32), "rcr_mask");
+
+    uint32_t combined_size = size + 1;
+    vexa::value real_count = builder->urem(count, builder->get_const_int(combined_size, 32), "rcr_mod");
+
+    vexa::value cf_ext = builder->resize(cf, combined_size);
+    vexa::value dst_ext = builder->resize(dst, combined_size);
+    vexa::value combined = builder->bor(
+                               builder->bshl(cf_ext, builder->get_const_int(size, combined_size), "rcr_cf_shift"), dst_ext, "rcr_combined");
+
+    vexa::value right = builder->bshr(combined, builder->resize(real_count, combined_size));
+    vexa::value rev_count = builder->sub(builder->get_const_int(combined_size, 32), real_count);
+    vexa::value left = builder->bshl(combined, builder->resize(rev_count, combined_size));
+    vexa::value rotated = builder->bor(left, right);
+
+    vexa::value new_cf = builder->resize(
+                             builder->bshr(rotated, builder->get_const_int(size, combined_size), "rcr_new_cf_shr"), 1);
+    vexa::value res = builder->resize(rotated, size);
+
+    vexa::value is_zero = builder->cmpeq(count, builder->get_const_int(0, 32));
+
+    write_operand(instruction, 0, builder->select(is_zero, dst, res));
+    update_cf(builder->select(is_zero, cf, new_cf));
+
+    vexa::value bit_n = builder->resize(builder->bshr(res, builder->get_const_int(size - 1, size)), 1);
+    vexa::value bit_n_1 = builder->resize(builder->bshr(res, builder->get_const_int(size - 2, size)), 1);
+    vexa::value of_val = builder->bxor(bit_n, bit_n_1);
+    update_of(builder->select(is_zero, read_register(x64::OF), of_val));
+
+    return next_rip();
+    CATCH()
+}
+
+semantic(CWD)
+{
+    TRY()
+    vexa::value ax = read_register(x64::AX);
+    vexa::value extended = builder->resize(ax, 32, true);
+    vexa::value dx = builder->extract(extended, 31, 16, "cwd_dx");
+    write_register(x64::DX, dx);
+    return next_rip();
+    CATCH()
+}
+
+semantic(SBB)
+{
+    TRY()
+    vexa::value dst = read_operand(instruction, 0);
+    vexa::value src = read_operand(instruction, 1);
+    vexa::value cf = read_register(x64::CF);
+
+    uint32_t size = dst.size();
+
+    vexa::value cf_ext = builder->resize(cf, size, false);
+    vexa::value src_plus_cf = builder->add(src, cf_ext, "sbb_src_cf");
+    vexa::value res = builder->sub(dst, src_plus_cf, "sbb_res");
+
+    write_operand(instruction, 0, res);
+
+    update_zf(res);
+    update_sf(res);
+
+    vexa::value borrow1 = builder->cmpltu(dst, src, "sbb_cf1");
+    vexa::value borrow2 = builder->cmpltu(builder->sub(dst, src), cf_ext, "sbb_cf2");
+    vexa::value final_cf = builder->bor(borrow1, borrow2, "sbb_final_cf");
+    update_cf(builder->resize(final_cf, 1));
+
+    vexa::value xor1 = builder->bxor(dst, src);
+    vexa::value xor2 = builder->bxor(dst, res);
+    vexa::value and_val = builder->band(xor1, xor2);
+    vexa::value of_bit = builder->bshr(and_val, builder->get_const_int(size - 1, size));
+    update_of(builder->resize(of_bit, 1, false));
+
+    return next_rip();
+    CATCH()
+}
+
+semantic(CMOVO)
+{
+    TRY()
+    vexa::value dst = read_operand(instruction, 0);
+    vexa::value src = read_operand(instruction, 1);
+    vexa::value of = read_register(x64::OF);
+    vexa::value condition = builder->cmpeq(of, builder->get_const_int(1, 1), "cmovo_cond");
+    vexa::value result = builder->select(condition, src, dst, "cmovo_res");
+    write_operand(instruction, 0, result);
+
+    return next_rip();
+    CATCH()
+}
+
+semantic(SHRD)
+{
+    TRY()
+    vexa::value dst = read_operand(instruction, 0);
+    vexa::value src = read_operand(instruction, 1);
+    vexa::value count_op = read_operand(instruction, 2);
+    uint32_t size = dst.size();
+
+    uint32_t mask_val = (instruction.info.operand_width == 64) ? 63 : 31;
+    vexa::value count = builder->band(builder->resize(count_op, 32), builder->get_const_int(mask_val, 32), "shrd_count");
+    vexa::value shr_dst = builder->bshr(dst, builder->resize(count, size), "shrd_shr_dst");
+    vexa::value rev_count = builder->sub(builder->get_const_int(size, 32), count, "shrd_rev_count");
+    vexa::value shl_src = builder->bshl(src, builder->resize(rev_count, size), "shrd_shl_src");
+    vexa::value result = builder->bor(shr_dst, shl_src, "shrd_result");
+
+    vexa::value is_count_zero = builder->cmpeq(count, builder->get_const_int(0, 32), "shrd_is_zero");
+    vexa::value cf_idx = builder->sub(count, builder->get_const_int(1, 32));
+    vexa::value last_bit = builder->resize(
+                               builder->band(builder->bshr(dst, builder->resize(cf_idx, size)), builder->get_const_int(1, size)),
+                               1);
+
+    vexa::value res_msb = builder->resize(builder->bshr(result, builder->get_const_int(size - 1, size)), 1);
+    vexa::value dst_msb = builder->resize(builder->bshr(dst, builder->get_const_int(size - 1, size)), 1);
+    vexa::value of_val = builder->bxor(res_msb, dst_msb, "shrd_of");
+
+    write_operand(instruction, 0, builder->select(is_count_zero, dst, result));
+
+    vexa::value current_zf = read_register(x64::ZF);
+    vexa::value current_sf = read_register(x64::SF);
+
+    vexa::value new_zf = builder->cmpeq(result, builder->get_const_int(0, size));
+    write_register(x64::ZF, builder->select(is_count_zero, current_zf, new_zf));
+    write_register(x64::SF, builder->select(is_count_zero, current_sf, res_msb));
+    write_register(x64::CF, builder->select(is_count_zero, read_register(x64::CF), last_bit));
+    write_register(x64::OF, builder->select(is_count_zero, read_register(x64::OF), of_val));
+
+    return next_rip();
+    CATCH()
+}
+
+semantic(BTS)
+{
+    TRY()
+    vexa::value val = read_operand(instruction, 0);
+    vexa::value bit_idx = read_operand(instruction, 1);
+    uint32_t size = val.size();
+
+    vexa::value mask = builder->get_const_int(size - 1, size);
+    vexa::value masked_idx = builder->band(bit_idx, mask, "bts_idx_masked");
+
+    vexa::value shifted = builder->bshr(val, masked_idx, "bts_shr");
+    vexa::value bit_val = builder->band(shifted, builder->get_const_int(1, size), "bit_val");
+    update_cf(builder->resize(bit_val, 1));
+
+    vexa::value one = builder->get_const_int(1, size);
+    vexa::value bit_mask = builder->bshl(one, masked_idx, "bit_mask");
+    vexa::value result = builder->bor(val, bit_mask, "bts_result");
+    write_operand(instruction, 0, result);
+
+    return next_rip();
+    CATCH()
+}
+
+semantic(BSR)
+{
+    TRY()
+    vexa::value src = read_operand(instruction, 1);
+    vexa::value dst = read_operand(instruction, 0);
+    uint32_t size = src.size();
+
+    vexa::value is_zero = builder->cmpeq(src, builder->get_const_int(0, size), "bsr_is_zero");
+    vexa::value last_found_index = dst;
+
+    for (int i = 0; i < (int)size; ++i)
+    {
+        vexa::value bit_val = builder->band(
+                                  builder->bshr(src, builder->get_const_int(i, size)),
+                                  builder->get_const_int(1, size));
+        vexa::value is_bit_set = builder->cmpeq(bit_val, builder->get_const_int(1, size));
+        last_found_index = builder->select(is_bit_set, builder->get_const_int(i, size), last_found_index);
+    }
+
+    write_operand(instruction, 0, builder->select(is_zero, dst, last_found_index));
+    update_zf(src);
+
+    return next_rip();
+    CATCH()
+}
+
+semantic(LAHF)
+{
+    TRY()
+    vexa::value rflags = read_register(x64::RFLAGS);
+    vexa::value rflags_8 = builder->resize(rflags, 8);
+    vexa::value flags_masked = builder->band(rflags_8, builder->get_const_int(0xD5, 8));
+    vexa::value res = builder->bor(flags_masked, builder->get_const_int(0x02, 8));
+
+    write_register(x64::AH, res);
+
+    return next_rip();
+    CATCH()
+}
+
+semantic(ADC)
+{
+    TRY()
+    vexa::value dst = read_operand(instruction, 0);
+    vexa::value src = read_operand(instruction, 1);
+    vexa::value cf = builder->resize(read_register(x64::CF), dst.size());
+
+    uint32_t size = dst.size();
+
+    vexa::value src_plus_cf = builder->add(src, cf);
+    vexa::value result = builder->add(dst, src_plus_cf);
+
+    vexa::value carry_out = builder->bor(
+                                builder->cmpltu(result, src),
+                                builder->cmpltu(src_plus_cf, cf));
+
+    vexa::value dst_msb = builder->bshr(dst, builder->get_const_int(size - 1, size));
+    vexa::value src_msb = builder->bshr(src, builder->get_const_int(size - 1, size));
+    vexa::value res_msb = builder->bshr(result, builder->get_const_int(size - 1, size));
+
+    vexa::value of = builder->band(
+                         builder->cmpeq(dst_msb, src_msb),
+                         builder->cmpne(dst_msb, res_msb));
+
+    write_operand(instruction, 0, result);
+
+    update_zf(result);
+    update_sf(result);
+
+    update_cf(builder->resize(carry_out, 1));
+    update_of(builder->resize(of, 1));
+
+    return next_rip();
+    CATCH()
+}
+
+semantic(CMC)
+{
+    TRY()
+    vexa::value current_cf = read_register(x64::CF);
+
+    vexa::value toggled_cf = builder->bxor(
+                                 current_cf,
+                                 builder->get_const_int(1, current_cf.size()),
+                                 "cmc_toggle");
+
+    update_cf(toggled_cf);
+
+    return next_rip();
+    CATCH()
+}
+
+semantic(SHLD)
+{
+    TRY()
+    vexa::value dst = read_operand(instruction, 0);
+    vexa::value src = read_operand(instruction, 1);
+    vexa::value count = read_operand(instruction, 2);
+
+    uint32_t size = dst.size();
+    vexa::value count_mask = builder->get_const_int(size == 64 ? 0x3F : 0x1F, count.size());
+    vexa::value masked_count = builder->band(count, count_mask, "shld_count_mask");
+    vexa::value is_count_zero = builder->cmpeq(masked_count, builder->get_const_int(0, masked_count.size()));
+    vexa::value shift_left = builder->bshl(dst, masked_count);
+    vexa::value shift_right_amount = builder->sub(builder->get_const_int(size, masked_count.size()), masked_count);
+    vexa::value shift_right = builder->bshr(src, shift_right_amount);
+
+    vexa::value result = builder->bor(shift_left, shift_right, "shld_result");
+
+    vexa::value cf_shift_amount = builder->sub(builder->get_const_int(size, masked_count.size()), masked_count);
+    vexa::value last_bit = builder->resize(
+                               builder->band(builder->bshr(dst, cf_shift_amount), builder->get_const_int(1, size)),
+                               1);
+
+    vexa::value dst_msb = builder->resize(builder->bshr(dst, builder->get_const_int(size - 1, size)), 1);
+    vexa::value res_msb = builder->resize(builder->bshr(result, builder->get_const_int(size - 1, size)), 1);
+    vexa::value of_val = builder->bxor(dst_msb, res_msb, "shld_of");
+
+    write_operand(instruction, 0, builder->select(is_count_zero, dst, result));
+
+    vexa::value current_zf = read_register(x64::ZF);
+    vexa::value current_sf = read_register(x64::SF);
+    vexa::value current_cf = read_register(x64::CF);
+    vexa::value current_of = read_register(x64::OF);
+
+    write_register(x64::ZF, builder->select(is_count_zero, current_zf, builder->cmpeq(result, builder->get_const_int(0, size))));
+    write_register(x64::SF, builder->select(is_count_zero, current_sf, res_msb));
+    write_register(x64::CF, builder->select(is_count_zero, current_cf, last_bit));
+    write_register(x64::OF, builder->select(is_count_zero, current_of, of_val));
+
+    return next_rip();
+    CATCH()
+}
+
+semantic(SETNZ)
+{
+    TRY()
+    vexa::value zf = read_register(x64::ZF);
+    vexa::value cond = builder->cmpeq(zf, builder->get_const_int(0, 1));
+    vexa::value final_val = builder->resize(cond, 8);
+    write_operand(instruction, 0, final_val);
+
     return next_rip();
     CATCH()
 }

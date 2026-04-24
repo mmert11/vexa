@@ -1,6 +1,27 @@
 #pragma once
-
 #include "../arch.hpp"
+
+#define push64(val)                                                                                                           \
+    {                                                                                                                         \
+        vexa::value sp_offset = builder->add(read_register(x64::RSP), builder->get_const_int(-8, 64), "new_sp");              \
+        vexa::value new_sp = builder->inttoptr(sp_offset, "direct_write");                                                    \
+        if (is_stack_access(sp_offset))                                                                                       \
+            new_sp = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr, sp_offset);                                     \
+        builder->store(val, new_sp);                                                                                          \
+        write_register(x64::RSP, builder->add(read_register(x64::RSP),                                                        \
+                                              builder->get_const_int(-8, 64), "new_rsp")); \
+    }
+
+#define pop64() 																							 \
+	({                                                                                       				 \
+		vexa::value current_rsp = read_register(x64::RSP);                                                   \
+		vexa::value sp_ptr = builder->inttoptr(current_rsp, "direct_read");                                  \
+		if (is_stack_access(current_rsp))                                                                    \
+			sp_ptr = builder->inbounds_gep(builder->get_int_ty(8), stack_ptr, current_rsp, "pop_sp");        \
+		vexa::value popped_val = builder->load(builder->get_int_ty(64), sp_ptr, "popped_val");               \
+		write_register(x64::RSP, builder->add(current_rsp, builder->get_const_int(8, 64), "rsp_increment")); \
+		popped_val;                                                                                          \
+	})
 
 namespace vexa
 {
@@ -112,12 +133,14 @@ namespace vexa
 		static constexpr reg_t ZF = 70;
 		static constexpr reg_t SF = 71;
 		static constexpr reg_t OF = 72;
+		static constexpr reg_t PF = 73;
+		static constexpr reg_t AF = 74;
 
-		static constexpr reg_t RIP = 73;
+		static constexpr reg_t RIP = 75;
 
-		static constexpr reg_t GS = 74;
+		static constexpr reg_t GS = 76;
 
-		static constexpr reg_t NB_REGS = 75;
+		static constexpr reg_t NB_REGS = 77;
 
 		static const std::map<reg_t, register_desc> register_table =
 		{
@@ -194,6 +217,8 @@ namespace vexa
 
 			// RFLAGS
 			{ RFLAGS, { RFLAGS, 64, 0} }, { CF, { RFLAGS, 1, 0 } },
+			{ AF, { RFLAGS, 1, 4 } },
+			{ PF, { RFLAGS, 1, 2 } },
 			{ ZF, { RFLAGS, 1, 6 } }, { SF, {RFLAGS, 1, 7 } },
 			{ OF, { RFLAGS, 1, 11 } },
 
@@ -201,16 +226,20 @@ namespace vexa
 		};
 
 		#define x64dcl(instr) vexa::value instr(ZydisDisassembledInstruction inst)
-		#define REG_INFO(reg) register_table.at(reg)
+		#define REG_INFO(reg) x64::register_table.at(reg)
 
 		class cpu64 : public cpu
         {
 		public:
-			cpu64(std::shared_ptr<ir::builder> _builder, std::shared_ptr<vexa::symex> _symex,
-            	std::shared_ptr<vexa::memory> _memory, std::shared_ptr<vexa::context> _context);
+			cpu64(vexa::context* _context);
+
             void run() override;
 			void write_register(reg_t reg, vexa::value value) override;
+			void _write_register(reg_t reg, z3::expr value) override;
+
     		vexa::value read_register(reg_t reg) override;
+    		z3::expr _read_register(reg_t reg) override;
+			
 		private:
 			void lift(ZydisDisassembledInstruction instruction);
 			vexa::value read_operand(ZydisDisassembledInstruction instruction, uint8_t operand_idx);
@@ -222,10 +251,7 @@ namespace vexa
 			vexa::value resolve_imm_address(ZydisDisassembledInstruction instruction, uint8_t operand_idx = 0);
 			vexa::value resolve_mem_address(ZydisDisassembledInstruction instruction, ZydisDecodedOperand operand);
 			bool is_stack_access(vexa::value addr);
-			std::pair<vexa::value, vexa::value> resolve_indirect_jmp(vexa::value v);
-			
-			bool vbranching = false;
-			uint64_t current_vip = 0;
+
 
 			x64dcl(MOV);
 			x64dcl(MOVZSXD);
@@ -287,7 +313,18 @@ namespace vexa
 			x64dcl(SETNL);
 			x64dcl(JS);
 			x64dcl(SETLE);
-
+			x64dcl(RCL);
+			x64dcl(RCR);
+			x64dcl(CWD);
+			x64dcl(SBB);
+			x64dcl(CMOVO);
+			x64dcl(SHRD);
+			x64dcl(BTS);
+			x64dcl(BSR);
+			x64dcl(LAHF);
+			x64dcl(ADC);
+			x64dcl(CMC);
+			x64dcl(SHLD);
 			x64dcl(SETNZ);
 
 			const std::map<ZydisRegister, reg_t> zydis_register_table = {
