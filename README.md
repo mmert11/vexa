@@ -1,5 +1,5 @@
 <p align="center">
-	<img src="https://i.postimg.cc/ncNkDRdc/resim.png" width="400" height="200"/>
+	<img src="resources/logo.png" width="400" height="200"/>
 </p>
 
 **VEXA** is a x86-64 targeted symbolic execution and LLVM IR lifting framework. It mainly focuses on lifting single functions that obfuscated or virtualized, optimizing/deobfuscating and recompiling them back into the binary.
