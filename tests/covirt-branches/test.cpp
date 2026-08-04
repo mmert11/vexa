@@ -8,7 +8,7 @@ int main()
     uint64_t hash = 3792093018525610720;
     uint64_t va = 0x2150;
 
-    if (vexa::utils::hash_file_fnv1a64(bin_file) != hash)
+    if (hash_file_fnv1a64(bin_file) != hash)
         return 1;
 
     vexa::init();

@@ -47,7 +47,6 @@ namespace utils {
 
 std::string addr_to_str(uint64_t addr);
 void set_logger_error_mode();
-uint64_t hash_file_fnv1a64(const std::string& path);
 
 }
 

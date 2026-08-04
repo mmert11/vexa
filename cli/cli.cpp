@@ -85,7 +85,7 @@ int main(int argc, char** argv)
     cli.add_flag("--no-opaque-solving", no_opaque_solving, "Disables opaque predicate solving with Z3");
     cli.add_flag("--cfg-recovery", cfg_recovery, "Enables CFG recovery mode");
     cli.add_flag("--vcfg-recovery", vcfg_recovery, "Enables Virtual CFG recovery mode");
-    cli.add_flag("--cfg-path-sensitive", vcfg_path_sensitive, "Specialize VCFG paths while preserving path-local loops");
+    cli.add_flag("--cfg-path-sensitive", vcfg_path_sensitive, "Do not merge paths while preserving loops.");
     auto recompile_option = cli.add_option("-r,--recompile", output_file, "Output path for recompiling the lifted IR (default: 'recompiled')")
                             ->expected(0, 1);
 
@@ -141,7 +141,7 @@ int main(int argc, char** argv)
                 cpu->VJMP = true;
                 std::cout << "Next VPC: " << std::hex << VPC << std::endl;
 
-                if (VPC == 0xe028)
+                if (VPC == 0xe028 && false)
                 {
                     e.set_option(vexa::option::OPAQUE_SOLVING, false);
                 }
@@ -152,24 +152,9 @@ int main(int argc, char** argv)
         }
     };
 
-    auto cond_br = [&](vexa::engine& e) -> void
-    {
-        auto cpu = e.get_cpu();
-
-        if (cpu->instruction.pc == 0xdd94)
-        {
-            e.set_option(vexa::option::OPAQUE_SOLVING, false);
-        }
-        else if (cpu->instruction.pc == 0xddbc)
-        {
-            e.set_option(vexa::option::OPAQUE_SOLVING, true);
-        }
-    };
-
     if (engine.get_option(vexa::option::MODE) == vexa::mode_t::VCFG_RECOVERY)
     {
         engine.set_callback(vexa::event_kind::INDIRECT_JUMP, v_dispatch);
-        //engine.set_callback(vexa::event_kind::INSTRUCTION_LIFT, cond_br);
     }
 
     auto cpu = engine.get_cpu();

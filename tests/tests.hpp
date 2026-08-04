@@ -92,5 +92,34 @@ inline bool write_file(
     return file.good();
 }
 
+inline uint64_t hash_file_fnv1a64(const std::string& path)
+{
+    std::ifstream file(path, std::ios::binary);
+    if (!file)
+        throw std::runtime_error("couldnt open file " + path);
+
+    constexpr std::uint64_t offset_basis = 14695981039346656037ULL;
+    constexpr std::uint64_t prime = 1099511628211ULL;
+
+    std::uint64_t hash = offset_basis;
+
+    char buffer[8192];
+
+    while (file) {
+        file.read(buffer, sizeof(buffer));
+        const std::streamsize size = file.gcount();
+
+        for (std::streamsize i = 0; i < size; ++i) {
+            hash ^= static_cast<unsigned char>(buffer[i]);
+            hash *= prime;
+        }
+    }
+
+    if (file.bad())
+        throw std::runtime_error("couldnt read file " + path);
+
+    return hash;
+}
+
 #undef VEXA_POPEN
 #undef VEXA_PCLOSE

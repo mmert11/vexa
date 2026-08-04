@@ -59,10 +59,10 @@ enum class option
     // see vexa::mode_t
     MODE,
 
-    // Controls how VCFG joins are reconstructed.
-    // 0: merge every visit to the same VPC,
-    // 1: specialize sibling paths while still rebuilding path-local loops.
+    // Controls how CFG joins are reconstructed.
     // see vexa::cfg_join_policy_t
+    // 0: merge every visit to the same VPC,
+    // 1: specialize sibling paths while still rebuilding loops.
     CFG_JOIN_POLICY,
 
     // Cleans every dead register stores except for return register.
