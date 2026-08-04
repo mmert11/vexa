@@ -8,4 +8,6 @@
 - Emulates the lifted IR code using ***Z3***
 - Applies binary patches and modifications using ***LIEF***
 
+***This is just a hobby project and maintained only by me! I dont promise it will deobf/devirt any kind of commercial protection.*** 
+
 ## Quickstart
