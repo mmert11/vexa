@@ -18,47 +18,6 @@ if (false)
 }
 */
 
-/*
-
-auto callback = [&](vexa::engine& e) -> void
-    {
-        auto cpu = e.get_cpu();
-        auto symex = e.get_symex();
-        auto memory = e.get_memory();
-
-        if (cpu->instruction.pc != 0x40228c)
-            return;
-
-        auto* rbp = cpu->read_register(vexa::amd64::RBP)->simplify();
-        auto* stack_ptr = vexa::to_ptr(symex->get(cpu->stack_ptr)->simplify());
-
-        if (!rbp->is_concrete())
-        {
-            std::cout << "RBP veya stack pointer symbolic\n";
-            return;
-        }
-
-        const int64_t rbp_offset = static_cast<int64_t>(rbp->as_uint64());
-
-        const int64_t stack_page_address =
-            static_cast<int64_t>(stack_ptr->as_uint64())
-            + rbp_offset
-            - 0x2c;
-
-        auto* pointer = symex->pointer(
-            stack_page_address,
-            stack_ptr->get_page());
-
-        auto* value = memory->read(pointer, 32);
-
-        std::cout << value->as_expr() << '\n';
-        getchar();
-
-        cpu->VPC = value->as_uint64();
-        cpu->VJMP = true;
-    };
-*/
-
 int main(int argc, char** argv)
 {
     std::string input_file, output_file;
@@ -117,45 +76,6 @@ int main(int argc, char** argv)
     engine.set_option(vexa::option::Z3_CONSTANT_PROPAGATION, !no_constant_propagation);
     engine.set_option(vexa::option::LOOP_REROLL, 0);
     engine.set_option(vexa::option::STATE_CLEANUP, 1);
-
-    bool first_dispatch = true;
-    uint64_t handler_table;
-
-    auto v_dispatch = [&](vexa::engine& e) -> void
-    {
-        auto cpu = e.get_cpu();
-        vexa::value* r9 = e.get_cpu()->read_register(vexa::amd64::R9);
-
-        if (first_dispatch)
-        {
-            //std::cout << "Found handler table: " << std::hex << r9->as_uint64() << std::endl;
-            handler_table = r9->as_uint64();
-            first_dispatch = false;
-        }
-        else
-        {
-            if (r9->as_uint64() == handler_table)
-            {
-                uint64_t VPC = cpu->read_register(vexa::amd64::RAX)->as_uint64();
-                cpu->VPC = VPC;
-                cpu->VJMP = true;
-                std::cout << "Next VPC: " << std::hex << VPC << std::endl;
-
-                if (VPC == 0xe028 && false)
-                {
-                    e.set_option(vexa::option::OPAQUE_SOLVING, false);
-                }
-                else {
-                    e.set_option(vexa::option::OPAQUE_SOLVING, true);
-                }
-            }
-        }
-    };
-
-    if (engine.get_option(vexa::option::MODE) == vexa::mode_t::VCFG_RECOVERY)
-    {
-        engine.set_callback(vexa::event_kind::INDIRECT_JUMP, v_dispatch);
-    }
 
     auto cpu = engine.get_cpu();
     auto symex = engine.get_symex();
