@@ -1,14 +1,6 @@
 #include <vexa/vexa.h>
 #include <vexa/passes/state2alloca.hpp>
 
-/*
-1 - tüm parent'ı olmayan main register'lar için alloca'lar oluştur ve bir map içerisinde tut.
-2 - tüm gep'leri gez. offseti, oluşturulan alloca registerlarının offseti ile aynı olanları doğrudan değiştir
-	aynı olmayanların ise offsetlerini parent'larının offsetinden çıkar. farkı parent'larının alloca'larına gep ile ekle
-	ve değiştir.
-3 - tüm ret yönergelerinin öncesinde bu alloca'lardan state'e transfer yap.
-*/
-
 remill::Register* vexa::passes::state2alloca::sub_to_parent(uint32_t offset)
 {
     remill::Register* parent = nullptr;
@@ -51,7 +43,7 @@ bool vexa::passes::state2alloca::run(llvm::Function* func)
     auto create_alloca = [&](const remill::Register* r) {
         if (!r->parent)
         {
-            llvm::Value* alloca = builder->CreateAlloca(builder->getIntNTy(r->size * 8), builder->getIntN(64, r->size * 8), r->name);
+            llvm::Value* alloca = builder->CreateAlloca(builder->getIntNTy(r->size * 8), builder->getIntN(64, 1), r->name);
             offset_to_alloca[r->offset] = alloca;
         }
     };

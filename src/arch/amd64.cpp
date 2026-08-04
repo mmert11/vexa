@@ -5,7 +5,6 @@
 
 vexa::amd64::Amd64Cpu::Amd64Cpu(vexa::context* _context) : vexa::cpu(_context)
 {
-    TRY()
     str_to_reg = {
         {"RAX", RAX}, {"RBX", RBX}, {"RCX", RCX}, {"RDX", RDX},
         {"RSI", RSI}, {"RDI", RDI}, {"RSP", RSP}, {"RBP", RBP},
@@ -24,7 +23,7 @@ vexa::amd64::Amd64Cpu::Amd64Cpu(vexa::context* _context) : vexa::cpu(_context)
         {"BL", BL},   {"CL", CL},   {"DL", DL},   {"SIL", SIL},
         {"DIL", DIL}, {"SPL", SPL}, {"BPL", BPL}, {"R8B", R8B},
         {"R9B", R9B}, {"R10B", R10B}, {"R11B", R11B}, {"R12B", R12B},
-        {"R13B", R13B}, {"R14B", R14B}, {"R15B", R15B}, {"PC", PC},
+        {"R13B", R13B}, {"R14B", R14B}, {"R15B", R15B}, {"PC", amd64::PC},
         {"SS", SS},   {"ES", ES},   {"GS", GS},   {"FS", FS},
         {"DS", DS},   {"CS", CS},   {"GSBASE", GSBASE}, {"FSBASE", FSBASE},
         {"XMM0", XMM0}, {"XMM1", XMM1}, {"XMM2", XMM2}, {"XMM3", XMM3},
@@ -41,8 +40,6 @@ vexa::amd64::Amd64Cpu::Amd64Cpu(vexa::context* _context) : vexa::cpu(_context)
 
     arch = remill::Arch::Build(context->llvm_context.get(), remill::kOSLinux, remill::kArchAMD64);
     initialize_arch();
-    
-    CATCH()
 }
 
 remill::Register* vexa::amd64::Amd64Cpu::get_return_register()

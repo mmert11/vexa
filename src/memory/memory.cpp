@@ -12,34 +12,30 @@ std::shared_ptr<vexa::mem_page> vexa::memory::allocate(uint64_t size)
     return new_page;
 }
 
-void vexa::memory::write(vexa::shared_pointer addr, vexa::shared_value val)
+void vexa::memory::write(vexa::pointer* addr, vexa::value* val)
 {
-    TRY()
     addr->simplify();
     return _write(addr, val);
-    CATCH()
 }
 
-vexa::shared_value vexa::memory::read(vexa::shared_pointer addr, int size)
+vexa::value* vexa::memory::read(vexa::pointer* addr, int size)
 {
-    TRY()
     addr->simplify();
     return _read(addr, size);
-    CATCH()
 }
 
 // internal write function
-void vexa::memory::_write(vexa::shared_pointer addr, vexa::shared_value val)
+void vexa::memory::_write(vexa::pointer* addr, vexa::value* val)
 {
     z3::expr addr_expr = addr->as_expr();
     z3::expr val_expr = val->as_expr();
     int size = val_expr.get_sort().bv_size();
 
     auto& page = addr->get_page()->concrete_memory;
-    uint64_t base = addr->as_uint64();
 
     if (addr_expr.is_numeral())
     {
+        uint64_t base = addr->as_uint64();
         for (int i = 0; i < size / 8; i++)
         {
             page[base + i] = val_expr.extract(i * 8 + 7, i * 8).simplify();
@@ -47,12 +43,12 @@ void vexa::memory::_write(vexa::shared_pointer addr, vexa::shared_value val)
     }
     else
     {
-        // TODO: erase concrete memory here
+        // TODO: handle symbolic writes
     }
 }
 
 // internal read function
-vexa::shared_value vexa::memory::_read(vexa::shared_pointer addr, int size)
+vexa::value* vexa::memory::_read(vexa::pointer* addr, int size)
 {
     z3::expr addr_expr = addr->as_expr();
     auto& concrete_memory = addr->get_page()->concrete_memory;

@@ -4,6 +4,8 @@
 namespace vexa {
 namespace passes {
 
+// UNDER MAINTENANCE, DONT USE UNTIL ITS REWORKED !!
+
 // Basic loop reroll pass to simplify the unrolled loops.
 // It searches for vexa.unrolled.marker function calls in code to identify locations loop starts (see arch.cpp).
 // And starts pattern matching to detect the edges of the loop and iteration count.

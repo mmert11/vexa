@@ -1,212 +1,177 @@
 #include <vexa/vexa.h>
 #include <vexa/passes/constant_propagation.hpp>
-
+#include <deque>
 #include <unordered_set>
-#include <iostream>
+#include <vector>
 
 #include <llvm/Analysis/LoopInfo.h>
+#include <llvm/Analysis/ValueTracking.h>
+#include <llvm/IR/CFG.h>
 #include <llvm/IR/Dominators.h>
 
-bool vexa::passes::constant_propagation::run(llvm::Function* func)
-{
-    llvm::Function* function = func;
+// maintaining this pass was too difficult and draining for me
+// so i let the ai handle it all, bugs and edge-cases are expected
+// you can find the legacy version here
+// https://github.com/mmert11/vexa/blob/1.2/src/passes/constant_propagation.cpp
 
-    // run llvm's LoopInfo analysis
+bool vexa::passes::constant_propagation::
+has_only_defined_constant_operands(llvm::Instruction *instruction)
+{
+    for (llvm::Use &operand : instruction->operands())
+    {
+        llvm::Value *value = operand.get();
+        if (!llvm::isa<llvm::Constant>(value) ||
+            llvm::isa<llvm::UndefValue>(value) ||
+            llvm::isa<llvm::PoisonValue>(value))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool vexa::passes::constant_propagation::is_ssa_fold_candidate(
+    llvm::Instruction *instruction,
+    llvm::LoopInfo &LI,
+    const std::unordered_set<llvm::BasicBlock *> &joined_blocks)
+{
+    if (!instruction->getParent() ||
+        llvm::isa<llvm::LoadInst>(instruction) ||
+        llvm::isa<llvm::StoreInst>(instruction) ||
+        llvm::isa<llvm::PHINode>(instruction) ||
+        instruction->isTerminator() ||
+        instruction->mayHaveSideEffects() ||
+        !instruction->getType()->isIntegerTy() ||
+        LI.getLoopFor(instruction->getParent()) ||
+        joined_blocks.count(instruction->getParent()) ||
+        !has_only_defined_constant_operands(instruction))
+    {
+        return false;
+    }
+
+    auto *operation = llvm::dyn_cast<llvm::Operator>(instruction);
+    return operation &&
+           !llvm::canCreateUndefOrPoison(operation) &&
+           llvm::isSafeToSpeculativelyExecute(instruction) &&
+           symex->is_sync(instruction);
+}
+
+std::vector<llvm::Instruction *>
+vexa::passes::constant_propagation::collect_instruction_users(
+    llvm::Instruction *instruction)
+{
+    std::vector<llvm::Instruction *> users;
+    users.reserve(instruction->getNumUses());
+    for (llvm::User *user : instruction->users())
+    {
+        if (auto *user_instruction =
+                llvm::dyn_cast<llvm::Instruction>(user))
+        {
+            users.push_back(user_instruction);
+        }
+    }
+    return users;
+}
+
+std::vector<llvm::Instruction *>
+vexa::passes::constant_propagation::propagate_ssa_values(
+    llvm::Function *function,
+    llvm::LoopInfo &LI,
+    value_simplifier &simplify_once,
+    const std::vector<llvm::Instruction *> &seeds)
+{
+
+    std::unordered_set<llvm::BasicBlock *> joined_blocks;
+    for (llvm::BasicBlock &block : *function)
+    {
+        if (llvm::pred_size(&block) > 1)
+            joined_blocks.insert(&block);
+    }
+
+    std::vector<llvm::Instruction *> dead_values;
+    std::deque<llvm::Instruction *> worklist;
+    std::unordered_set<llvm::Instruction *> queued;
+    std::unordered_set<llvm::Instruction *> folded;
+
+    auto enqueue = [&](llvm::Instruction *instruction)
+    {
+        if (!folded.count(instruction) && queued.insert(instruction).second)
+            worklist.push_back(instruction);
+    };
+
+    for (llvm::Instruction *seed : seeds)
+        enqueue(seed);
+
+    while (!worklist.empty())
+    {
+        llvm::Instruction *instruction = worklist.front();
+        worklist.pop_front();
+        queued.erase(instruction);
+
+        if (folded.count(instruction) ||
+            !is_ssa_fold_candidate(instruction, LI, joined_blocks))
+        {
+            continue;
+        }
+
+        vexa::value *value = symex->get(instruction);
+        if (vexa::dyn_cast<vexa::pointer>(value))
+            continue;
+
+        value = simplify_once(value);
+        if (!value->is_concrete() ||
+            value->size() != instruction->getType()->getIntegerBitWidth())
+        {
+            continue;
+        }
+
+        llvm::Constant *constant =
+            builder->getIntN(value->size(), value->as_uint64());
+        std::vector<llvm::Instruction *> users =
+            collect_instruction_users(instruction);
+
+        folded.insert(instruction);
+        instruction->replaceAllUsesWith(constant);
+        dead_values.push_back(instruction);
+        for (llvm::Instruction *user : users)
+            enqueue(user);
+    }
+
+    return dead_values;
+}
+
+void vexa::passes::constant_propagation::erase_dead_instructions(
+    const std::vector<llvm::Instruction *> &instructions)
+{
+    for (auto it = instructions.rbegin(); it != instructions.rend(); ++it)
+    {
+        if ((*it)->use_empty())
+            (*it)->eraseFromParent();
+    }
+}
+
+
+bool vexa::passes::constant_propagation::run(llvm::Function *function)
+{
     llvm::DominatorTree DT(*function);
     llvm::LoopInfo LI;
     LI.analyze(DT);
 
-    // Memory
-    // we look for every concrete store instruction in loops
-    // and mark them as in-loop writes
-    std::unordered_set<uint64_t> loop_written_addrs;
-    for (llvm::Loop *L : LI)                                        // iterate every loop
-        for (llvm::BasicBlock *BB : L->getBlocks())                 // every block
-            for (auto &I : *BB)                                     // every instruction
-                if (auto *SI = llvm::dyn_cast<llvm::StoreInst>(&I)) // if instruction is a store
-                {
-                    // get the target address
-                    llvm::Value *ptr = SI->getPointerOperand();
-                    if (!symex->is_sync(ptr)) // do we have a symbolic expresion for it? if not, skip
-                        continue;
+    value_simplifier simplify_once;
+    memory_propagation_result memory =
+        concretize_memory_loads(function, DT, LI, simplify_once);
 
-                    if (L->isLoopInvariant(SI->getValueOperand()))
-                        continue;
+    std::vector<llvm::Instruction *> dead_ssa_values =
+        propagate_ssa_values(
+            function, LI, simplify_once, memory.fold_seeds);
 
-                    // get the expr
-                    vexa::shared_value addr = symex->get(ptr);
-                    addr->simplify();
-                    if (addr->is_concrete()) // is it concrete?
-                        // if yes, mark the address as in-loop variant
-                        loop_written_addrs.insert(addr->as_uint64());
-                }
-    
-    // we iterate every load instruction in function
-    // and check if there are any loads that can be over-concretized
-    // except for the ones that marked as in-loop writes
-    // so we dont break the loops dataflow
-    std::vector<llvm::Instruction *> dead_loads;
-    for (auto &BB : *function)
-    {
-        for (auto &I : BB)
-        {
-            auto *LI_inst = llvm::dyn_cast<llvm::LoadInst>(&I);
-            // if its not a load instruction, skip
-            if (!LI_inst)
-                continue;
+    erase_dead_instructions(dead_ssa_values);
+    erase_dead_instructions(memory.dead_loads);
 
-            // if its not sync with symex, skip
-            if (!symex->is_sync(LI_inst))
-                continue;
-            
-            // get the target address of load instruction
-            llvm::Value *ptr = LI_inst->getPointerOperand();
-            if (symex->is_sync(ptr))
-            {
-                vexa::shared_value ptr_addr = symex->get(ptr);
-                ptr_addr->simplify();
-                if (!ptr_addr->is_concrete()) // if its not concrete, skip
-                    continue;
-
-                // if its written in loops before, skip
-                if (loop_written_addrs.count(ptr_addr->as_uint64()))
-                    continue;
-
-                // if its an external memory access (global memory), skip
-                if (ptr_addr->as_uint64() > 0)
-                    continue;
-            }
-
-            // get the symbolic value of load and check if its concrete
-            vexa::shared_value val = symex->get(LI_inst);
-            val->simplify();
-            if (!val->is_concrete())
-                continue;
-
-            // create it as a new constant in ir
-            llvm::Value *C = builder->getIntN(val->size(), val->as_uint64());
-            if (C->getType() != LI_inst->getType())
-                continue;
-
-            // and replace the load
-            LI_inst->replaceAllUsesWith(C);
-            dead_loads.push_back(LI_inst);
-        }
-    }
-
-    // remove all optimized loads
-    for (auto *I : dead_loads)
-        if (I->use_empty())
-            I->eraseFromParent();
-
-    std::cout << "[analysis] over-concretized memory loads: " << std::dec << dead_loads.size() << std::endl;
-
-    // SSA variables
-    // mark all variables in loops as tainted
-    // except for loop invariants
-    std::unordered_set<llvm::Value *> loopTaintedVariants;
-    for (llvm::Loop *L : LI)                            // every loop
-        for (llvm::BasicBlock *loopBB : L->getBlocks()) // every block
-            for (auto &I : *loopBB)                     // every instruction
-            {
-                if (L->isLoopInvariant(&I))
-                    continue; // if its marked as loop-invariant by llvm, skip
-
-                // mark it as tainted loop variable
-                loopTaintedVariants.insert(&I);
-            }
-
-    // taint the load variables that access to tainted addresses
-    // that detected by memory analysis up there
-    for (auto &BB : *function)
-        for (auto &I : BB)
-            if (auto *LD = llvm::dyn_cast<llvm::LoadInst>(&I))
-            {
-                llvm::Value *ptr = LD->getPointerOperand();
-                if (!symex->is_sync(ptr))
-                    continue;
-
-                vexa::shared_value addr = symex->get(ptr);
-                addr->simplify();
-                if (addr->is_concrete() && loop_written_addrs.count(addr->as_uint64()))
-                    loopTaintedVariants.insert(LD);
-            }
-
-    // iterate all instructions in function
-    // and check if any of the operands is tainted
-    // if so, taint that instruction as well
-    bool changed = true;
-    while (changed)
-    {
-        changed = false;
-        for (auto &BB : *function)
-            for (auto &I : BB)
-            {
-                if (loopTaintedVariants.count(&I)) // if its already tainted, skip
-                    continue;
-                    
-                for (auto &op : I.operands()) // iterate operands
-                    if (loopTaintedVariants.count(op.get()))
-                    {
-                        // if one of the operands is tainted, taint the instruction
-                        // and repeat the process until there is no more instruction to be marked
-                        if (loopTaintedVariants.insert(&I).second)
-                            changed = true;
-                        break;
-                    }
-            }
-    }
-
-    // iterate all instructions and eliminate the tainted ones
-    // then check if we have a concrete expression for it in our symex module
-    // if so, replace the instruction with new concretized constant
-    std::vector<llvm::Instruction *> toDelete;
-    for (llvm::BasicBlock &BB : *function)
-    {
-        for (auto &I : BB)
-        {
-            llvm::Value *lvalue = &I;
-            if (llvm::isa<llvm::Constant>(lvalue) ||
-                    llvm::isa<llvm::StoreInst>(lvalue) ||
-                    lvalue->getType()->isPointerTy() ||
-                    I.isTerminator())
-                continue;
-
-            if (loopTaintedVariants.count(lvalue))
-                continue;
-
-            // eliminate llvm.assume because it caused some type mismatch problems
-            bool feeds_assume = false;
-            for (auto *user : lvalue->users()) {
-                if (auto *CI = llvm::dyn_cast<llvm::CallInst>(user)) {
-                    auto *F = CI->getCalledFunction();
-                    if (F && F->getName().str().starts_with("llvm.assume")) {
-                        feeds_assume = true;
-                        break;
-                    }
-                }
-            }
-            if (feeds_assume) continue;
-
-            if (!symex->is_sync(lvalue))
-                continue;
-
-            vexa::shared_value expression = symex->get(lvalue);
-            expression->simplify();
-            if (!expression->is_concrete())
-                continue;
-
-            llvm::Value *concretized = builder->getIntN(expression->size(), expression->as_uint64());
-            lvalue->replaceAllUsesWith(concretized);
-            toDelete.push_back(&I);
-        }
-    }
-
-    // remove the old instructions
-    for (auto *inst : toDelete)
-        if (inst->use_empty())
-            inst->eraseFromParent();
-
-    std::cout << "[analysis] over-concretized ssa variables: " << toDelete.size() << std::endl;
+    LOG_INFO(logger, "Concretized memory loads -> {}",
+             memory.dead_loads.size());
+    LOG_INFO(logger, "Concretized SSA values -> {}",
+             dead_ssa_values.size());
+    builder->eraseDeletedInstructions();
     return true;
 }

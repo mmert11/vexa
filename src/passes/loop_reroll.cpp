@@ -3,6 +3,8 @@
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/Transforms/Utils/ValueMapper.h>
 
+// UNDER MAINTENANCE, DONT USE UNTIL ITS REWORKED !!
+
 // basic loop reroll pass to simplify the unrolled loops
 // it searches for vexa.unrolled.marker function calls in code to identify locations loop begins
 // and starts pattern matching to detect the edges of the loop and iteration count
@@ -396,8 +398,7 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
                     }
                 }
 
-                std::cout << "[analysis] loop detected and re-rolled, iteration: " << std::dec << loop.iteration_count + 1 << std::endl;
-
+                LOG_INFO(logger, "Loop detected and re-rolled, iteration {}", loop.iteration_count + 1);
                 // we have re-rolled a loop
                 return true;
             }

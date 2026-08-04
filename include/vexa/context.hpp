@@ -28,15 +28,90 @@ enum class os
     windows
 };
 
-namespace ir {class builder;}
+namespace ir {
+class builder;
+}
+
 class cpu;
 class symex;
 class memory;
+class engine;
 
+enum class option
+{
+    // Solves opaque predicates during symbolic execution.
+    // However, it can prevent CFG recovery.
+    // Shouldn't be used with CFG_RECOVERY option.
+    // 0: disabled,
+    // 1: enabled
+    OPAQUE_SOLVING,
+
+    // Sets the CPU behaviour during symbolic execution and lifting.
+    // 0: Symbolic Exploration: discovers the all execution paths in the function,
+    //      doesn't handle the loops. Works fine for linear functions.
+    // 1: CFG Recovery: Tries to recover the CFG, rebuilds loops.
+    //      However, its fragile on CFF & VM obfuscation, because
+    //      it recovers CFG via tracing the RIP register.
+    // 2: VCFG Recovery (semi-auto): Similar to CFG Recovery mode, but focuses on
+    //      recovering the obfuscated CFGs. Like CFF and VM obfuscation.
+    //      It requires custom implementation for detecting the dispatchers and
+    //      VIP (for VM obfuscation).
+    // see vexa::mode_t
+    MODE,
+
+    // Controls how VCFG joins are reconstructed.
+    // 0: merge every visit to the same VPC,
+    // 1: specialize sibling paths while still rebuilding path-local loops.
+    // see vexa::cfg_join_policy_t
+    CFG_JOIN_POLICY,
+
+    // Cleans every dead register stores except for return register.
+    // 0: disabled,
+    // 1: enabled
+    STATE_CLEANUP,
+
+    // Simplifies expressions and propagates constants.
+    // 0: disabled,
+    // 1: enabled
+    Z3_CONSTANT_PROPAGATION,
+
+    // Tries to re-roll unrolled loops.
+    // 0: disabled,
+    // 1: enabled
+    LOOP_REROLL,
+
+    COUNT,
+};
+
+enum class event_kind
+{
+    CONDITIONAL_TAKEN,
+    CONDITIONAL_FALLTHROUGH,
+    PATH_FORKING,
+    DIRECT_JUMP,
+    INDIRECT_JUMP,
+    INSTRUCTION_LIFT
+};
+
+enum mode_t : int
+{
+    SYMBOLIC_EXPLORATION,
+    CFG_RECOVERY,
+    VCFG_RECOVERY
+};
+
+enum cfg_join_policy_t : int
+{
+    MERGE_BY_PC,
+    SPECIALIZE_BY_PATH
+};
+
+using event_callback_t = std::function<void(vexa::engine&)>;
 class context
 {
 public:
-    context(vexa::arch _arch);
+    context(std::shared_ptr<vexa::engine> engine, vexa::arch _arch);
+    std::shared_ptr<vexa::engine> engine;
     std::shared_ptr<vexa::cpu> cpu;
     std::shared_ptr<vexa::memory> memory;
     std::shared_ptr<vexa::symex> symex;
@@ -46,124 +121,21 @@ public:
     std::unique_ptr<llvm::Module> llvm_module;
     std::shared_ptr<z3::context> z3_context;
     llvm::FunctionCallee MarkerFunc;
+
+    // options
+    void set_option(option opt, int v);
+    int get_option(option opt);
+
+    std::unordered_map<option, int> options = {
+        {option::OPAQUE_SOLVING, 1},
+        {option::MODE, 0},
+        {option::STATE_CLEANUP, 1},
+        {option::Z3_CONSTANT_PROPAGATION, 1},
+        {option::LOOP_REROLL, 1},
+        {option::CFG_JOIN_POLICY, 0}
+    };
+
+    void event_handler(vexa::event_kind event_k);
+    std::unordered_map<vexa::event_kind, event_callback_t> event_callbacks;
 };
-
-namespace utils {
-std::string addr_to_str(uint64_t addr);
-
-// thanks gemini for this class
-template<typename K, typename V>
-class OrderedMap
-{
-    using Node = std::pair<K,V>;
-    std::list<Node> order;
-    std::unordered_map<K, typename std::list<Node>::iterator> map;
-
-public:
-    using iterator = typename std::list<Node>::iterator;
-    using const_iterator = typename std::list<Node>::const_iterator;
-    OrderedMap() = default;
-
-    OrderedMap(const OrderedMap& other) {
-        for (const auto& pair : other.order) {
-            insert(pair.first, pair.second);
-        }
-    }
-
-    OrderedMap& operator=(const OrderedMap& other) {
-        if (this != &other) {
-            order.clear();
-            map.clear();
-            for (const auto& pair : other.order) {
-                insert(pair.first, pair.second);
-            }
-        }
-        return *this;
-    }
-
-    iterator find_iterator(const K& key) {
-        auto it = map.find(key);
-        if(it != map.end()) {
-            return it->second;
-        }
-        return order.end();
-    }
-
-    const_iterator find_iterator(const K& key) const {
-        auto it = map.find(key);
-        if(it != map.end()) {
-            return it->second;
-        }
-        return order.end();
-    }
-
-    void insert(const K& k, const V& v) {
-        if(map.find(k) != map.end())
-            return;
-        order.emplace_back(k,v);
-        auto it = std::prev(order.end());
-        map[k] = it;
-    }
-
-    V& operator[](const K& key) {
-        auto it = map.find(key);
-        if(it != map.end())
-            return it->second->second;
-
-        order.emplace_back(key, V{});
-        auto lit = std::prev(order.end());
-        map[key] = lit;
-        return lit->second;
-    }
-
-    size_t count(const K& key) const {
-        return map.count(key);
-    }
-
-    void erase(const K& key) {
-        auto it = map.find(key);
-        if(it == map.end()) return;
-
-        order.erase(it->second);
-        map.erase(it);
-    }
-
-    void erase_range(K a, K b) {
-        if (map.find(a) == map.end() || map.find(b) == map.end()) return;
-
-        auto itA = map.at(a);
-        auto itB = map.at(b);
-
-        for (auto it = itA; ; ) {
-            auto next_it = std::next(it);
-            K key = it->first;
-
-            bool isLast = (it == itB);
-
-            order.erase(it);
-            map.erase(key);
-
-            if (isLast) break;
-            it = next_it;
-        }
-    }
-
-    V* find(const K& key) {
-        auto it = map.find(key);
-        if(it == map.end()) return nullptr;
-        return &it->second->second;
-    }
-
-    size_t size() const {
-        return map.size();
-    }
-
-    auto begin() {
-        return order.begin();
-    }
-    auto end() {
-        return order.end();
-    }
-};
-} // namespace utils
 }

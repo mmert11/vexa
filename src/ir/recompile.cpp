@@ -15,10 +15,8 @@
 
 #include <format>
 
-std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Function* mainFunction, bool optimize)
+std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Function* func, bool optimize)
 {
-    TRY()
-
     LLVMInitializeX86TargetInfo();
     LLVMInitializeX86Target();
     LLVMInitializeX86TargetMC();
@@ -26,53 +24,9 @@ std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Functio
     LLVMInitializeX86AsmParser();
     LLVMInitializeX86Disassembler();
 
-    VEXA_ASSERT(mainFunction != nullptr);
+    VEXA_ASSERT(func != nullptr);
     if (llvm::verifyModule(*context->llvm_module, &llvm::errs())) {
-        THROW("Module invalid!");
-    }
-
-    //vexa::ir::pass_manager manager(context);
-    //manager.add_pass<passes::strength_recovery::pre_compilation>();
-    //manager.run();
-
-    // transform every direct load/store addresses (which uses inttoptr(constant)) to global variables
-    // so we can fix them during relinking/relocation
-    std::unordered_map<uint64_t, vexa::global> globals;
-    for (auto &BB : *mainFunction)
-    {
-        for (auto &I : BB)
-        {
-            for (unsigned i = 0; i < I.getNumOperands(); ++i)
-            {
-                llvm::Value* OP = I.getOperand(i);
-                if (auto *CE = llvm::dyn_cast<llvm::ConstantExpr>(OP))
-                {
-                    if (CE->getOpcode() == llvm::Instruction::IntToPtr)
-                    {
-                        if (auto *AddrConst = llvm::dyn_cast<llvm::ConstantInt>(CE->getOperand(0)))
-                        {
-                            uint64_t addr = AddrConst->getZExtValue();
-                            llvm::Type* type = nullptr;
-
-                            // get the type of operand
-                            if (auto* SI = llvm::dyn_cast<llvm::StoreInst>(&I))
-                                type = SI->getValueOperand()->getType();
-                            else if (auto* LI = llvm::dyn_cast<llvm::LoadInst>(&I))
-                                type = LI->getType();
-                            else
-                                type = llvm::Type::getInt8Ty(I.getContext());
-
-                            // if this address is already iterated before, use saved
-                            vexa::global variable = globals.count(addr)
-                                                    ? globals[addr]
-                                                    : globals[addr] = global_var(type, "var_" + std::format("{:x}", addr));
-
-                            I.setOperand(i, variable.as_llvm());
-                        }
-                    }
-                }
-            }
-        }
+        THROW("Module invalid before codegen!");
     }
 
 #if 0
@@ -83,7 +37,8 @@ std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Functio
 #endif
 
     // set sysv calling convetion for all functions in module
-    mainFunction->setCallingConv(arch == arch::x86_64 ? llvm::CallingConv::X86_64_SysV : THROW("unsupported arch"));
+    if (arch == arch::x86_64)
+        func->setCallingConv(llvm::CallingConv::X86_64_SysV);
 
     llvm::Function* entry_func = create_function("vexa_entry", std::vector<llvm::Type*>());
     set_function(entry_func);
@@ -92,34 +47,66 @@ std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Functio
     llvm::BasicBlock* entry_bb = basic_block("entry");
     SetInsertPoint(entry_bb);
 
+    auto cpu = context->cpu;
+    auto& DL = context->llvm_module->getDataLayout();
+    auto* struct_DL = DL.getStructLayout(cpu->arch->StateStructType());
+    uint64_t state_struct_size = struct_DL->getSizeInBytes().getFixedValue();
+
     // create a register mapping wrapper
-    std::string asmCode =
+    std::string inlineasm =
         ".intel_syntax noprefix\n"
-        "mov r10, rsp\n"
+        "sub rsp, " + std::to_string(state_struct_size) + "\n";
 
-        "pushfq\n"
-        "push r15\n"
-        "push r14\n"
-        "push r13\n"
-        "push r12\n"
-        "push r11\n"
-        "push r10\n"
-        "push r9\n"
-        "push r8\n"
-        "push r10\n"
-        "push rbp\n"
+    // prologue
+    //
+    for (auto& reg : cpu->registers)
+    {
+        auto* r = reg.second;
+        if (!r->parent && r->name != "RIP" && !r->name.ends_with("BASE") && r->size == 8 && !r->name.starts_with("MM"))
+        {
+            std::string reg_lower_case = r->name;
+            std::transform(reg_lower_case.begin(), reg_lower_case.end(), reg_lower_case.begin(), [](unsigned char c) {
+                return std::tolower(c);
+            });
 
-        "mov r9, rdi\n"
-        "mov r8, rsi\n"
-        "xchg rcx, rdx\n"
-        "mov rdi, rax\n"
-        "mov rsi, rbx\n"
+            std::string s = std::format("mov qword ptr [rsp + {}], {}\n", r->offset, reg_lower_case);
+            inlineasm.append(s);
+        }
+    }
+    std::string prologue_rsp_fix = std::format("add qword ptr [rsp + {}], {}\n", cpu->registers[amd64::SP]->offset, state_struct_size);
+    inlineasm.append(prologue_rsp_fix);
+    inlineasm.append("mov rdi, rsp\n"); // STATE POINTER
+    inlineasm.append("xor rsi, rsi\n"); // PROGRAM COUNTER
 
-        "call " + mainFunction->getName().str() + "\n"
-        "add rsp, 88\n"
-        "ret\n";
+    // MEMORY POINTER
+    vexa::global base = global_var(getInt8Ty(), "IMAGE_BASE");
+    inlineasm.append(
+        "lea rdx, [rip + " + base.name() + "]\n"
+    );
 
-    inline_asm(asmCode);
+    // function call
+    //
+    inlineasm.append("call " + func->getName().str() + "\n");
+
+    // epilogue
+    //
+    for (auto& reg : cpu->registers)
+    {
+        auto* r = reg.second;
+        if (!r->parent && r->name != "RIP" && r->name != "RSP" && !r->name.ends_with("BASE") && r->size == 8 && !r->name.starts_with("MM"))
+        {
+            std::string reg_lower_case = r->name;
+            std::transform(reg_lower_case.begin(), reg_lower_case.end(), reg_lower_case.begin(), [](unsigned char c) {
+                return std::tolower(c);
+            });
+
+            std::string s = std::format("mov {}, qword ptr [rsp + {}]\n", reg_lower_case, r->offset);
+            inlineasm.append(s);
+        }
+    }
+    inlineasm.append(std::format("add rsp, {}\n", state_struct_size));
+
+    inline_asm(inlineasm);
     CreateRet(getIntN(0, 64));
 
     llvm::SmallVector<char, 0> ObjBuffer;
@@ -138,7 +125,6 @@ std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Functio
     {
         THROW("unsupported arch!");
     }
-
     context->llvm_module->setTargetTriple(T);
 
     std::string Error;
@@ -164,6 +150,4 @@ std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Functio
 
     pass.run(*context->llvm_module);
     return std::vector<uint8_t>(ObjBuffer.begin(), ObjBuffer.end());
-
-    CATCH()
 }

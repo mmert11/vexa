@@ -18,7 +18,7 @@ bool vexa::ir::simplify_cfg_and_dce::run(llvm::Function* func)
 
     llvm::FunctionPassManager FPM;
     FPM.addPass(llvm::SimplifyCFGPass());
-    FPM.addPass(llvm::DCEPass());
+    FPM.addPass(llvm::ADCEPass());
     FPM.run(*func, FAM);
 
     return false;
@@ -45,9 +45,6 @@ bool vexa::ir::Oz::run(llvm::Function* func)
     if (!function)
         THROW("function is null!");
 
-    if (llvm::verifyFunction(*function, &llvm::errs()))
-        THROW("invalid IR before optimization!");
-
     llvm::LoopAnalysisManager LAM;
     llvm::FunctionAnalysisManager FAM;
     llvm::CGSCCAnalysisManager CGAM;
@@ -69,11 +66,11 @@ bool vexa::ir::Oz::run(llvm::Function* func)
     return false;
 }
 
-void vexa::ir::pass_manager::run()
+void vexa::ir::pass_manager::run(llvm::Function* func)
 {
-    TRY()
+    if (llvm::verifyFunction(*func, &llvm::errs()))
+        THROW("invalid IR before optimization!");
 
-    llvm::Function* func = this->context->builder->get_function();
     // run the passes in order, if any pass changes something in the ir, start over the process
     bool repeat;
     do
@@ -97,7 +94,5 @@ void vexa::ir::pass_manager::run()
         OrderedBlocks.push_back(BB);
     for (size_t i = 1; i < OrderedBlocks.size(); ++i)
         OrderedBlocks[i]->moveAfter(OrderedBlocks[i - 1]);
-
-    CATCH()
 
 }

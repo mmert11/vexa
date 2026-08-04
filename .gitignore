@@ -2,4 +2,9 @@ build/
 .cache/
 .vscode/
 .xmake/
+.omp/
 .clangd
+compile_commands.json
+build.sh
+.git
+CMakeLists.txt

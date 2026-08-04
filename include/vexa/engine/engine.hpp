@@ -6,41 +6,23 @@
 #include "../memory/memory.hpp"
 #include "../binary/binary.hpp"
 
+#include <quill/LogMacros.h>
+#include <quill/SimpleSetup.h>
+
 namespace vexa
 {
-
-enum class option : int
-{
-    // Cleans every dead register stores except for return register.
-    // 0: disabled,
-    // 1: enabled
-    STATE_CLEANUP,
-
-    // Simplifies expressions and propagates constants.
-    // 0: disabled,
-    // 1: enabled
-    Z3_CONSTANT_PROPAGATION,
-
-    // Tries to re-roll unrolled loops.
-    // 0: disabled,
-    // 1: enabled
-    LOOP_REROLL,
-
-    COUNT,
-};
-
 class engine
 {
 public:
-    engine(vexa::arch arch = arch::x86_64);
+    engine(vexa::arch arch = vexa::arch::x86_64);
     vexa::context* get_context();
-    std::shared_ptr<ir::builder> get_builder();
+    std::shared_ptr<vexa::ir::builder> get_builder();
     std::shared_ptr<vexa::memory> get_memory();
     std::shared_ptr<vexa::symex> get_symex();
     std::shared_ptr<vexa::cpu> get_cpu();
 
     void run(uint64_t pc);
-    void write_memory(uint64_t address, std::vector<uint8_t> buffer);
+    void write_memory(uint64_t address, std::span<const uint8_t> buffer);
     void mark_symbolic(uint64_t address, uint32_t size);
 
     // options
@@ -51,16 +33,22 @@ public:
     // supports elf & pe.
     void map_binary(vexa::binary& binary);
 
+    // event callbacks
+    void set_callback(vexa::event_kind kind, vexa::event_callback_t callback);
+
     // utils
     void optimize();
-    void print_ir();
+    void print();
     void reset();
+
 
     // recompiles the lifted module
     std::vector<uint8_t> recompile(bool optimize = true);
     // patches the binary at given rva
     // and relocates the symbols
-    void patch(vexa::binary& binary, std::vector<uint8_t> object_file, uint64_t va, std::string section_name = ".text");
+    void patch(vexa::binary& binary, std::vector<uint8_t> object_file, uint64_t va);
+
+    std::string ir;
 private:
     vexa::arch _arch;
     vexa::context* context;
@@ -69,16 +57,11 @@ private:
     std::shared_ptr<vexa::cpu> cpu;
     std::shared_ptr<vexa::symex> symex;
 
-    std::unordered_map<option, int> options = {
-        {option::STATE_CLEANUP, 2},
-        {option::Z3_CONSTANT_PROPAGATION, 1},
-        {option::LOOP_REROLL, 1}
-    };
-
-    std::string ir;
     std::chrono::milliseconds time;
     int instr_count;
 
-    std::vector<uint8_t> fix_relocations(vexa::binary &object_file, std::vector<uint8_t> code_content, uint64_t new_section_rva, uint64_t image_base);
+    std::vector<uint8_t> fix_relocations(vexa::binary &object_file, std::vector<uint8_t> code_content,
+                                         uint64_t new_section_rva, uint64_t image_base, uint64_t shift_offset = 0);
+    std::vector<uint8_t> read_binary_file(const std::string& filename);
 };
 }

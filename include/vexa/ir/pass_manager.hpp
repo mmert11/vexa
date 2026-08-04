@@ -58,7 +58,7 @@ public:
     void add_pass(Args&&... args) {
         pipeline.push_back(std::make_shared<T>(context, std::forward<Args>(args)...));
     }
-    void run();
+    void run(llvm::Function* func);
 private:
     vexa::context* context;
     std::vector<std::shared_ptr<pass>> pipeline;

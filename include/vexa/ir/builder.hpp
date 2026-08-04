@@ -17,7 +17,7 @@ public:
     void add_attribute(llvm::Attribute::AttrKind attr);
     void inline_asm(std::string asmCode);
     int instr_count();
-    std::vector<uint8_t> recompile(vexa::arch arch, llvm::Function* mainFunction = nullptr, bool optimize = true);
+    std::vector<uint8_t> recompile(vexa::arch arch, llvm::Function* func = nullptr, bool optimize = true);
     void set_function(llvm::Function* f);
     llvm::Function* get_function();
     llvm::BasicBlock* basic_block(std::string name = "");
@@ -27,12 +27,14 @@ public:
     vexa::dual_value get_value_by_name(std::string name);
     void push_ip();
     void pop_ip();
+    void deleteLater(llvm::Instruction* I);
+    void eraseDeletedInstructions();
 private:
     vexa::context* context;
     std::shared_ptr<vexa::symex> symex;
     llvm::Function* function;
     std::stack<llvm::IRBuilderBase::InsertPoint> insert_points;
-
+    std::vector<llvm::WeakVH> toDelete;
 };
 
 }

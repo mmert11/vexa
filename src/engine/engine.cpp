@@ -17,20 +17,24 @@
 #include <LIEF/ELF/Segment.hpp>
 #include <LIEF/Object.hpp>
 
-#include <CSiMBA.h>
-#include <LLVMParser.h>
+#include <quill/std/Chrono.h>
 
 vexa::engine::engine(vexa::arch arch) : _arch(arch)
 {
-    TRY()
-    // init classes
-    reset();
+    // init modules (cpu, memory, builder etc.)
+    context = new vexa::context(std::shared_ptr<vexa::engine>(this), _arch);
+    memory = context->memory;
+    symex = context->symex;
+    builder = context->builder;
+    cpu = context->cpu;
 
-    CATCH()
+    LOG_INFO(logger, "Initialized the engine");
 }
 
 void vexa::engine::run(uint64_t pc)
 {
+    LOG_INFO(logger, "Started symbolic execution and lifting");
+
     auto start = std::chrono::high_resolution_clock::now();
     cpu->run(pc);
     auto end = std::chrono::high_resolution_clock::now();
@@ -42,9 +46,9 @@ void vexa::engine::run(uint64_t pc)
     rso.flush();
 
     instr_count = builder->instr_count();
+    logger->flush_log();
 }
 
-#define SIMPLIFY_MBA 0
 void vexa::engine::optimize()
 {
     vexa::ir::pass_manager manager(context);
@@ -63,11 +67,11 @@ void vexa::engine::optimize()
         manager.add_pass<passes::state_cleanup>();
 
     auto start = std::chrono::high_resolution_clock::now();
-    manager.run();
+    manager.run(cpu->vexa_lifted);
     auto end = std::chrono::high_resolution_clock::now();
-    auto _time = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    auto time = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    std::cout << "[optimize] optimized the function " << "(" << _time << ")" << std::endl;
+    LOG_INFO(logger, "Optimized the function ({})", time);
     ir.clear();
 
     llvm::raw_string_ostream rso(ir);
@@ -75,17 +79,10 @@ void vexa::engine::optimize()
     rso.flush();
 }
 
-void vexa::engine::print_ir()
+void vexa::engine::print()
 {
-    std::error_code ec;
-    llvm::raw_fd_ostream dest("output.ll", ec, llvm::sys::fs::OF_None);
-
-    if (!ec) {
-        cpu->vexa_lifted->print(dest);
-        dest.flush();
-    }
-
-    const size_t asm_count = cpu->p_manager.lifted_count;
+    logger->flush_log();
+    const size_t asm_count = cpu->lifted_count;
     const size_t ir_before_opt = instr_count;
     const size_t ir_after_opt = builder->instr_count();
 
@@ -118,20 +115,42 @@ std::vector<uint8_t> vexa::engine::recompile(bool optimize)
     return builder->recompile(_arch, cpu->vexa_lifted, optimize);
 }
 
-void vexa::engine::write_memory(uint64_t address, std::vector<uint8_t> buffer)
+void vexa::engine::write_memory(uint64_t address, std::span<const uint8_t> buffer)
 {
     for (unsigned int i = 0; i < buffer.size(); i++)
     {
-        vexa::shared_value addr = symex->concrete(address + i, 64);
-        vexa::shared_pointer ptr = symex->pointer(addr, cpu->global_memory);
+        /*
+        vexa::value* addr = symex->concrete(address + i, 64);
+        vexa::pointer* ptr = symex->pointer(addr, cpu->global_memory);
         memory->write(ptr, symex->concrete(buffer[i], 8));
+        */
+
+        cpu->global_memory->concrete_memory[address + i] = context->z3_context->bv_val(buffer[i], 8);
+    }
+}
+
+std::vector<uint8_t> vexa::engine::read_binary_file(const std::string& filename)
+{
+    std::ifstream file(filename, std::ios::binary | std::ios::ate);
+
+    if (!file.is_open()) {
+        THROW("Couldn't open {}", filename);
+    }
+
+    std::streamsize size = file.tellg();
+    file.seekg(0, std::ios::beg);
+
+    std::vector<uint8_t> buffer(size);
+
+    if (file.read(reinterpret_cast<char*>(buffer.data()), size)) {
+        return buffer;
+    } else {
+        THROW("Couldn't read {}", filename);
     }
 }
 
 void vexa::engine::map_binary(vexa::binary& binary)
 {
-    TRY()
-
     if (binary.is_elf())
     {
         LIEF::ELF::Binary *elf_binary = binary.as_elf();
@@ -142,15 +161,10 @@ void vexa::engine::map_binary(vexa::binary& binary)
         // map segments to the memory
         for (const LIEF::ELF::Segment &segment : elf_binary->segments())
         {
-            if (segment.type() != LIEF::ELF::Segment::TYPE::LOAD)
-                continue;
-
             uint64_t v_size = segment.virtual_size();
             uint64_t v_addr = segment.virtual_address();
 
-            auto content = segment.content();
-            std::vector<uint8_t> data(content.begin(), content.end());
-            write_memory(v_addr, data);
+            write_memory(v_addr, segment.content());
         }
     }
     else if (binary.is_pe())
@@ -164,24 +178,24 @@ void vexa::engine::map_binary(vexa::binary& binary)
         for (const LIEF::PE::Section &section : pe_binary->sections())
         {
             auto content = section.content();
-            std::vector<uint8_t> data(content.begin(), content.end());
 
-            if (data.empty())
+            if (content.empty())
                 continue;
 
             uint64_t v_addr = pe_binary->optional_header().imagebase() + section.virtual_address();
-            write_memory(v_addr, data);
+            write_memory(v_addr, content);
         }
     }
+    else if (binary.is_raw())
+    {
+        write_memory(0, binary.raw_data());
+    }
     else
-        THROW("unknown binary type");
-
-    CATCH()
+        THROW("Unknown binary type");
 }
 
-void vexa::engine::patch(vexa::binary& binary, std::vector<uint8_t> object_file, uint64_t va, std::string section_name)
+void vexa::engine::patch(vexa::binary& binary, std::vector<uint8_t> object_file, uint64_t va)
 {
-    TRY()
     // parse the object file
     vexa::binary object_f(object_file);
     LIEF::Binary* object = object_f.lief();
@@ -194,7 +208,7 @@ void vexa::engine::patch(vexa::binary& binary, std::vector<uint8_t> object_file,
     LIEF::Section* section = nullptr;
     for (auto &s : object->sections())
     {
-        if (s.name() == section_name)
+        if (s.name() == ".text")
         {
             section = &s;
             break;
@@ -202,7 +216,7 @@ void vexa::engine::patch(vexa::binary& binary, std::vector<uint8_t> object_file,
     }
 
     if (!section)
-        THROW("section is not found in the object file: " + section_name);
+        THROW(".text section is not found in the object file");
 
     // read the section content
     auto _code_content = section->content();
@@ -215,6 +229,9 @@ void vexa::engine::patch(vexa::binary& binary, std::vector<uint8_t> object_file,
 
     if (binary.is_elf())
     {
+        // ELF BINARIES
+        //
+
         LIEF::ELF::Binary* elf = binary.as_elf();
         uint64_t image_base = elf->is_pie() ? 0 : elf->imagebase();
         // create the vexa segment
@@ -225,20 +242,33 @@ void vexa::engine::patch(vexa::binary& binary, std::vector<uint8_t> object_file,
         vexa_segment.alignment(0x1000);
         vexa_segment.content(code_content);
 
-        // relocate the program header table manually with PHDR_RELOC::PIE_SHIFT method
-        // so we dont let lief to decide to relocate the phdr or not
-        // this method shifts the whole binary with +0x1000
+        // relocate the program header table manually with PHDR_RELOC::PIE_SHIFT method                                              │
+        // so we dont let lief to decide to relocate the phdr or not                                                                 │
+        // this method shifts the whole binary with +0x1000                                                                          │
         // see https://github.com/lief-project/LIEF/blob/f986c6dd17b297cef88f8f1f8d1cdc987827e671/src/ELF/Binary.cpp#L2655
-        elf->relocate_phdr_table(LIEF::ELF::Binary::PHDR_RELOC::PIE_SHIFT);
-        LIEF::ELF::Segment* new_segment = elf->add(vexa_segment);
-        va += 0x1000;
+        // (only for PIE binaries)
+        uint64_t shift_offset = 0;
+        if (elf->is_pie())
+        {
+            elf->relocate_phdr_table(LIEF::ELF::Binary::PHDR_RELOC::PIE_SHIFT);
+            shift_offset = 0x1000;
+            va += shift_offset;
+        }
+        else
+        {
+            elf->relocate_phdr_table(LIEF::ELF::Binary::PHDR_RELOC::AUTO);
+        }
 
-        std::vector<uint8_t> relocated = fix_relocations(object_f, code_content, new_segment->virtual_address() - 0x1000, image_base);
+        LIEF::ELF::Segment* new_segment = elf->add(vexa_segment);
+
+        std::vector<uint8_t> relocated = fix_relocations(
+                                             object_f, code_content, new_segment->virtual_address(), image_base, shift_offset);
+
         // update the binary with fixed relocations
         new_segment->content(relocated);
 
         // calculate the address to create a relative jump
-        uint64_t new_func_va = image_base + new_segment->virtual_address() + entry_symbol->value();
+        uint64_t new_func_va = new_segment->virtual_address() + entry_symbol->value();
         int32_t calc_relative = static_cast<int32_t>(new_func_va - (va + 5));
 
         std::vector<uint8_t> jmp_bytes = {0xE9};
@@ -252,6 +282,9 @@ void vexa::engine::patch(vexa::binary& binary, std::vector<uint8_t> object_file,
     }
     else if (binary.is_pe())
     {
+        // PE BINARIES
+        //
+
         LIEF::PE::Binary* pe = binary.as_pe();
         uint64_t image_base = pe->optional_header().imagebase();
 
@@ -263,7 +296,8 @@ void vexa::engine::patch(vexa::binary& binary, std::vector<uint8_t> object_file,
             static_cast<uint32_t>(LIEF::PE::Section::CHARACTERISTICS::MEM_READ)
         );
         LIEF::PE::Section* new_section = pe->add_section(vexa_section); // PE::virtual_address() actually returns RVA, not VA
-        std::vector<uint8_t> relocated = fix_relocations(object_f, code_content, new_section->virtual_address(), image_base);
+        std::vector<uint8_t> relocated = fix_relocations(
+                                             object_f, code_content, image_base + new_section->virtual_address(), image_base);
 
         // update the binary with fixed relocations
         new_section->content(relocated);
@@ -283,30 +317,35 @@ void vexa::engine::patch(vexa::binary& binary, std::vector<uint8_t> object_file,
     }
     else
         THROW("binary type is not supported");
-    CATCH()
 }
 
-std::vector<uint8_t> vexa::engine::fix_relocations(vexa::binary &object_file, std::vector<uint8_t> code_content, uint64_t new_section_rva, uint64_t image_base)
+std::vector<uint8_t> vexa::engine::fix_relocations(vexa::binary &object_file, std::vector<uint8_t> code_content,
+        uint64_t new_section_rva, uint64_t image_base, uint64_t shift_offset)
 {
-    TRY()
     if (!object_file.is_elf())
         THROW("unsupported binary type");
 
     for (auto &reloc : object_file.as_elf()->relocations())
     {
-        std::string &symbol_name = reloc.symbol()->name();
-        if (reloc.symbol() == nullptr || symbol_name == "") continue;
+        if (!reloc.has_symbol())
+            continue;
 
-        // calculate the virtual address of symbol
-        // global variable names are formatted as var_1234h by builder::recompile
+        std::string &symbol_name = reloc.symbol()->name();
+        if (symbol_name.empty())
+            continue;
+
         uint64_t symbol_va = 0;
-        if (symbol_name.substr(0, 4) == "var_") // if it starts with "var_", its a global variable
-            symbol_va = std::stoull(symbol_name.substr(4), nullptr, 16); // extract the va from string
-        else // else, its a function call
-            symbol_va = image_base + new_section_rva + reloc.symbol()->value();
+        if (symbol_name == "IMAGE_BASE")
+        {
+            symbol_va = image_base + shift_offset;
+        }
+        else
+        {
+            symbol_va = new_section_rva + reloc.symbol()->value();
+        }
 
         uint64_t patch_offset = reloc.address();
-        uint64_t patch_va = image_base + new_section_rva + patch_offset; // virtual address of patch location
+        uint64_t patch_va = new_section_rva + patch_offset; // virtual address of patch location
 
         switch (reloc.type())
         {
@@ -333,17 +372,21 @@ std::vector<uint8_t> vexa::engine::fix_relocations(vexa::binary &object_file, st
             break;
         }
         default:
-            THROW("unsupported relocation type " + std::to_string((uint64_t)reloc.type()));
+            THROW("unsupported relocation type {}", std::to_string((uint64_t)reloc.type()));
         }
     }
 
     return code_content;
-    CATCH()
+}
+
+void vexa::engine::set_callback(vexa::event_kind kind, vexa::event_callback_t callback)
+{
+    context->event_callbacks[kind] = callback;
 }
 
 void vexa::engine::reset()
 {
-    context = new vexa::context(_arch);
+    context = new vexa::context(std::shared_ptr<vexa::engine>(this), _arch);
     memory = context->memory;
     symex = context->symex;
     builder = context->builder;
@@ -352,16 +395,15 @@ void vexa::engine::reset()
 
 void vexa::engine::set_option(vexa::option opt, int v)
 {
-    VEXA_ASSERT(opt < option::COUNT);
-    options[opt] = v;
+    context->set_option(opt, v);
 }
 
 int vexa::engine::get_option(vexa::option opt)
 {
-    VEXA_ASSERT(opt < option::COUNT);
-    return options.at(opt);
+    return context->get_option(opt);
 }
 
+// FOR DEBUG
 void vexa::engine::mark_symbolic(uint64_t address, uint32_t size)
 {
     for (uint32_t i = 0; i < size; i++)

@@ -58,11 +58,13 @@ vexa::global vexa::ir::builder::global_var(llvm::Type* type, std::string name)
 vexa::dual_value vexa::ir::builder::inbounds_gep(llvm::Type* type, llvm::Value* base, llvm::Value* offset)
 {
     llvm::Value* gep = CreateInBoundsGEP(type, base, offset);
+    
     // calculate it's symbolic expression
-    vexa::shared_pointer _base = vexa::dyn_cast<vexa::pointer>(symex->get(base));
-    vexa::shared_value _offset = symex->get(offset);
-    vexa::shared_value new_v = symex->value(_base->as_expr() + _offset->as_expr());
-    vexa::shared_pointer new_p = symex->pointer(new_v, _base->get_page());
+    vexa::pointer* _base = vexa::to_ptr(symex->get(base));
+    vexa::value* _offset = symex->get(offset);
+    vexa::value* new_v = symex->value(_base->as_expr() + _offset->as_expr());
+    vexa::pointer* new_p = symex->pointer(new_v, _base->get_page());
+
     // set in symex
     symex->set(gep, new_p);
     return vexa::dual_value(gep, new_p);
@@ -71,7 +73,7 @@ vexa::dual_value vexa::ir::builder::inbounds_gep(llvm::Type* type, llvm::Value* 
 vexa::dual_value vexa::ir::builder::inttoptr(llvm::Value* v, llvm::Type* destTy, std::shared_ptr<vexa::mem_page> page)
 {
     llvm::Value* ptr = CreateIntToPtr(v, destTy);
-    vexa::shared_pointer ptr_ = symex->pointer(symex->get(v), page);
+    vexa::pointer* ptr_ = symex->pointer(symex->get(v), page);
     symex->set(ptr, ptr_);
     return vexa::dual_value(ptr, ptr_);
 }
@@ -94,4 +96,19 @@ void vexa::ir::builder::pop_ip()
     VEXA_ASSERT(!insert_points.empty());
     restoreIP(insert_points.top());
     insert_points.pop();
+}
+
+void vexa::ir::builder::deleteLater(llvm::Instruction* I)
+{
+    toDelete.push_back(I);
+}
+
+void vexa::ir::builder::eraseDeletedInstructions()
+{
+    for (auto& VH : toDelete)
+    {
+        if (llvm::Instruction* I = llvm::dyn_cast_or_null<llvm::Instruction>(VH))
+            I->eraseFromParent();
+    }
+    toDelete.clear();
 }

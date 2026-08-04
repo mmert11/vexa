@@ -1,22 +1,47 @@
-set_project("VEXA")
-set_version("1.0.0")
+set_project("vexa")
+set_version("1.3")
 
 add_rules("mode.debug", "mode.release")
+add_requires("llvm", "z3", "lief", "quill", "cli11")
 
-add_requires("llvm", "z3", "lief")
+option("remill")
+	-- !!!!!!!!!!!!!!!!!!!!!!!!!!
+    set_default(path.join(os.projectdir(), "..", "remill"))
+    set_showmenu(true)
+    set_description("remill path")
 
-target("VEXA")
+includes("xmake/vexa_consumer.lua")
+
+target("vexa")
     set_kind("static")
-
-    add_files("src/*.cpp", "src/**/*.cpp")
-    
-    add_includedirs("include", {public = true})
-    
-    add_packages("llvm", "z3", "lief")
-    
     set_languages("c++20")
-    
+    add_rules("utils.install.cmake_importfiles")
+    add_files("src/*.cpp", "src/**/*.cpp")
+    add_includedirs("include", {public = true})
+    add_packages("llvm", "z3", "lief", "quill")
+
+    -- install options
+    set_languages("c++20")
     on_install(function (target)
         os.cp("include/*", path.join(target:installdir(), "include"))
         os.cp(target:targetfile(), path.join(target:installdir(), "lib"))
     end)
+
+target("vexa-cli")
+    set_kind("binary")
+    set_languages("c++20")
+    add_files("cli/*.cpp")
+
+    configure_vexa_consumer()
+    add_packages("cli11")
+
+after_build(function (target)
+    import("core.project.task")
+    -- generate CMakeLists.txt
+    --task.run("project", {kind = "cmake"})
+    -- generate compile_commands.json
+    task.run("project", {kind = "compile_commands"})
+end)
+
+target_end()
+includes("tests/xmake.lua")

@@ -6,6 +6,14 @@
 #include <sstream>
 #include <exception>
 
+#include <quill/LogMacros.h>
+#include <quill/SimpleSetup.h>
+#include <quill/Backend.h>
+#include <quill/Frontend.h>
+
+namespace vexa
+{
+
 class vexa_exception : public std::exception {
 public:
     vexa_exception(const char* file, int line, const std::string& msg) {
@@ -24,19 +32,33 @@ private:
     std::string formatted;
 };
 
-#define THROW(msg) throw vexa_exception(__FILE__, __LINE__, (msg))
-#define TRY() try {
-#define CATCH() \
-    } catch (const vexa_exception& e) { \
-        std::cerr << e.what() << std::endl; \
-        std::exit(-1); \
-    } catch (const std::exception& e) { \
-        std::cerr << "\033[91m[exception]\033[96m[" << std::filesystem::path(__FILE__).filename().string() << ":" << __LINE__ << "]\033[0m " << e.what() << std::endl; \
-        std::exit(-1); \
-    } catch (...) { \
-        std::cerr << "\033[91m[exception]\033[0m unknown critical error" << std::endl; \
-        std::exit(-1); \
-    }
+enum class logging_mode
+{
+    NONE,
+    DEFAULT,
+    DEBUG
+};
+
+extern quill::Logger *logger;
+void init(logging_mode mode = logging_mode::DEFAULT);
+void set_logging_mode(vexa::logging_mode mode);
+
+namespace utils {
+
+std::string addr_to_str(uint64_t addr);
+void set_logger_error_mode();
+uint64_t hash_file_fnv1a64(const std::string& path);
+
+}
+
+}
+
+#define THROW(msg, ...) \
+    do { \
+        utils::set_logger_error_mode();                      \
+        LOG_ERROR(logger, msg, ##__VA_ARGS__);               \
+        throw std::runtime_error("");  \
+    } while (0)
 
 #define VEXA_ASSERT(cond)                                \
     do {                                                 \
