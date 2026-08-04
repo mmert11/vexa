@@ -1,5 +1,9 @@
 <p align="center">
-	<img src="resources/logo.png" width="400" height="200"/>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="resources/logo_dark.png">
+    <source media="(prefers-color-scheme: light)" srcset="resources/logo_light.png">
+    <img src="resources/logo-light.png" width="400" height="200" alt="VEXA">
+  </picture>
 </p>
 
 **VEXA** is an x86-64 targeted symbolic execution and lifting framework built on LLVM. It mainly focuses on lifting single functions that obfuscated or virtualized, optimizing/deobfuscating and recompiling them back into the binary.
