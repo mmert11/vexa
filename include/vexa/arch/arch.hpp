@@ -49,6 +49,7 @@ public:
     private:
         void write_memory_intrinsic(llvm::CallInst& intrinsic_call, size_t size);
         void read_memory_intrinsic(llvm::CallInst& intrinsic_call, size_t size);
+        vexa::value* handle_llvm_intrinsics(llvm::CallInst& I, llvm::Function* callee, llvm::Intrinsic::ID id);
 
         vexa::context* context;
         vexa::cpu* cpu;
@@ -106,7 +107,8 @@ public:
     std::map<reg_t, remill::Register*> registers;
 
     // path manager stuff
-    resolved_path_t resolve_path(vexa::value* v);
+    bool is_ite(vexa::value* v);
+    resolved_path_t resolve_ite(vexa::value* v);
     void branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t fallthrough_pc);
     bool CFG_recovery(vexa::mode_t mode);
     bool VJMP = false;

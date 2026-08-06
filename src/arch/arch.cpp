@@ -1,6 +1,7 @@
 #include <vexa/vexa.h>
 
 #include <format>
+#include <llvm/ADT/SmallVector.h>
 
 #include <remill/BC/Util.h>
 
@@ -399,7 +400,7 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
             return internal_lifter_status::successful;
         }
 
-        LOG_WARNING(logger, "{}", next->as_expr().to_string());
+        LOG_DEBUG(logger, "{}", next->as_expr().to_string());
         LOG_ERROR(logger, "Unresolved indirect jump");
         return internal_lifter_status::explore_other_paths;
 
@@ -476,44 +477,6 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
         store i64 %56, ptr %RAX, align 8, !tbaa !130
     */
 
-    llvm::StoreInst* store = nullptr;
-    llvm::Instruction* and_inst = nullptr;
-    llvm::SelectInst* select = nullptr;
-
-    // search for store and select instructions in basic block
-    //
-    for (auto it = block->rbegin(), end = block->rend(); it != end; ++it)
-    {
-        auto* candidate = llvm::dyn_cast<llvm::StoreInst>(&*it);
-        if (!candidate)
-            continue;
-
-        llvm::Value* stored_value = candidate->getValueOperand();
-        if (auto* direct_select = llvm::dyn_cast<llvm::SelectInst>(stored_value))
-        {
-            store = candidate;
-            select = direct_select;
-            break;
-        }
-
-        auto* binary = llvm::dyn_cast<llvm::BinaryOperator>(stored_value);
-        if (!binary || binary->getOpcode() != llvm::Instruction::And)
-            continue;
-
-        auto* masked_select =
-            llvm::dyn_cast<llvm::SelectInst>(binary->getOperand(0));
-        if (!masked_select)
-            continue;
-
-        store = candidate;
-        and_inst = binary;
-        select = masked_select;
-        break;
-    }
-
-    VEXA_ASSERT(store);
-    VEXA_ASSERT(select);
-
     /*
     CMOVO_GPRv_GPRv_32_:                              ; preds = %PUSH_GPRv_50_64_3
         store i64 5369515651, ptr %NEXT_PC, align 8
@@ -533,19 +496,84 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
         store i64 %76, ptr %R8, align 8, !tbaa !130
     */
 
+    struct value_wrapper
+    {
+        llvm::Instruction* instruction;
+        unsigned selected_operand;
+    };
+
+    llvm::StoreInst* store = nullptr;
+    llvm::SelectInst* select = nullptr;
+    llvm::SmallVector<llvm::Instruction*, 2> wrappers;
+
+    auto peel_select = [&](llvm::Value* value) -> llvm::SelectInst*
+    {
+        while (true)
+        {
+            if (auto* found = llvm::dyn_cast<llvm::SelectInst>(value))
+                return found;
+
+            if (auto* cast = llvm::dyn_cast<llvm::CastInst>(value))
+            {
+                wrappers.push_back(cast);
+                value = cast->getOperand(0);
+                continue;
+            }
+
+            auto* binary = llvm::dyn_cast<llvm::BinaryOperator>(value);
+            if (binary && binary->getOpcode() == llvm::Instruction::And)
+            {
+                wrappers.push_back(binary);
+                value = binary->getOperand(0);
+                continue;
+            }
+
+            return nullptr;
+        }
+    };
+
+    for (auto it = block->rbegin(), end = block->rend(); it != end; ++it)
+    {
+        auto* candidate = llvm::dyn_cast<llvm::StoreInst>(&*it);
+        if (!candidate)
+            continue;
+
+        wrappers.clear();
+        select = peel_select(candidate->getValueOperand());
+
+        if (select)
+        {
+            store = candidate;
+            break;
+        }
+    }
+
+    if (!store)
+    {
+        LOG_WARNING(logger, "Unsupported CMOV IR: {}", inst.function);
+        LOG_WARNING(logger, "Please report at https://github.com/mmert11/vexa/issues");
+        THROW("Error during handling CMOVxx");
+        return;
+    }
+
     llvm::Value* store_ptr = store->getPointerOperand();
     vexa::value* cond_val = VEXA_SYM_VAL(select->getCondition());
 
-    llvm::Value* true_val = select->getTrueValue();
-    llvm::Value* false_val = select->getFalseValue();
-    if (and_inst)
+    auto materialize = [&](llvm::Value* value)
     {
-        llvm::Value* true_and = builder->CreateAnd(true_val, and_inst->getOperand(1));
-        true_val = VEXA_EXEC(true_and).l;
+        for (auto it = wrappers.rbegin(); it != wrappers.rend(); ++it)
+        {
+            llvm::Instruction* cloned = (*it)->clone();
+            cloned->setOperand(0, value);
+            builder->Insert(cloned);
+            value = VEXA_EXEC(cloned).l;
+        }
 
-        llvm::Value* false_and = builder->CreateAnd(false_val, and_inst->getOperand(1));
-        false_val = VEXA_EXEC(false_and).l;
-    }
+        return value;
+    };
+
+    llvm::Value* true_val = materialize(select->getTrueValue());
+    llvm::Value* false_val = materialize(select->getFalseValue());
 
     // opaque predicate solving in conditional moves
     // disabled in vcfg recovery mode (EXPERIMENTAL!)
@@ -729,11 +757,62 @@ vexa::value* vexa::cpu::stack_access(uint64_t offset)
     return symex->pointer(addr, page);
 }
 
-vexa::cpu::resolved_path_t vexa::cpu::resolve_path(vexa::value* v)
+bool vexa::cpu::is_ite(vexa::value* v)
 {
-    v->simplify();
-
     z3::expr v_expr = v->as_expr();
+    if (v_expr.is_app() && v_expr.decl().decl_kind() == Z3_OP_ITE)
+        return true;
+    return false;
+}
+
+z3::expr normalize_ite(z3::expr e)
+{
+    z3::context& ctx = e.ctx();
+
+    auto normalize = [&](z3::expr parent_expr, z3::expr expr) -> z3::expr
+    {
+        if (!expr.is_app())
+            return parent_expr;
+
+        if (expr.decl().decl_kind() == Z3_OP_ITE)
+        {
+            z3::expr cond = expr.arg(0);
+            z3::expr t = expr.arg(1);
+            z3::expr f = expr.arg(2);
+
+            z3::expr_vector from(ctx);
+            z3::expr_vector to(ctx);
+
+            from.push_back(expr);
+            to.push_back(t);
+            z3::expr new_true = parent_expr.substitute(from, to);
+
+            to.pop_back();
+            to.push_back(f);
+            z3::expr new_false = parent_expr.substitute(from, to);
+
+            z3::expr_vector args(ctx);
+            args.push_back(cond);
+            args.push_back(new_true);
+            args.push_back(new_false);
+            return z3::ite(cond, new_true, new_false);
+        }
+
+        return parent_expr;
+    };
+
+    for (unsigned int i = 0; i < e.num_args(); i++)
+    {
+        e = normalize(e, e.arg(i));
+    }
+
+    return e.simplify();
+}
+
+vexa::cpu::resolved_path_t vexa::cpu::resolve_ite(vexa::value* v)
+{
+    z3::expr v_expr = normalize_ite(v->simplify()->as_expr());
+
     if (v_expr.is_app() && v_expr.decl().decl_kind() == Z3_OP_ITE)
     {
         z3::expr cond = v_expr.arg(0);
@@ -747,7 +826,7 @@ vexa::cpu::resolved_path_t vexa::cpu::resolve_path(vexa::value* v)
     }
 
     LOG_DEBUG(logger,"{}", v_expr.to_string());
-    THROW("failed to resolve indirect jump");
+    THROW("failed to resolve ite");
 }
 
 void vexa::cpu::replace_remill_intrinsics()
