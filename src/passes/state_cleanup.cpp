@@ -27,7 +27,7 @@ bool vexa::passes::state_cleanup::run(llvm::Function* func)
                 if (!store_PTR->accumulateConstantOffset(DL, store_offset)) continue;
 
                 // we check if the gep's first operand is our state pointer
-                if (store_PTR->getOperand(0) == context->cpu->state_ptr &&
+                if (store_PTR->getOperand(0) == context->cpu->state_ptr.l &&
                         store_offset != context->cpu->get_return_register()->offset) // every register except for return register
                 {
                     // now check if there is any load to same address after this store

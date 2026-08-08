@@ -23,9 +23,11 @@ public:
     value(z3::expr e) : _kind(kind::value), expr(e) {}
     value(z3::expr e, kind k) : _kind(k), expr(e) {}
 
+    std::vector<z3::expr> possible_values(std::vector<z3::expr> constraints);
     value* simplify();
     z3::expr as_expr() const;
-    uint64_t as_uint64() const;
+    z3::expr as_expr_bool() const;
+    uint64_t as_uint64() const; 
     uint64_t size() const;
     bool is_symbolic() const;
     bool is_concrete() const;
@@ -55,18 +57,31 @@ private:
     std::shared_ptr<mem_page> page;
 };
 
+template <typename From>
+vexa::pointer* to_ptr(From* Val) {
+    return vexa::dyn_cast<vexa::pointer>(Val);
+}
+
 // a wrapper class holds both llvm pointer and it's symbolic expression
+class dual_pointer
+{
+public:
+    dual_pointer() {}
+    dual_pointer(llvm::Value* _l, vexa::pointer* _v) : l(_l), v(_v) {}
+    llvm::Value* l;
+    vexa::pointer* v;
+};
+
 class dual_value
 {
 public:
     dual_value() {}
     dual_value(llvm::Value* _l, vexa::value* _v) : l(_l), v(_v) {}
+    dual_pointer to_ptr() {
+        return {l, vexa::to_ptr(v)};
+    }
+
     llvm::Value* l;
     vexa::value* v;
 };
-
-template <typename From>
-vexa::pointer* to_ptr(From* Val) {
-    return vexa::dyn_cast<vexa::pointer>(Val);
-}
 }

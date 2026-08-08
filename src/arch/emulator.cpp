@@ -20,7 +20,7 @@ void vexa::cpu::emulator::run_block(llvm::BasicBlock* BB)
 void vexa::cpu::emulator::write_memory_intrinsic(llvm::CallInst& call, size_t size)
 {
     builder->SetInsertPoint(&call);
-    
+
     // get pointer operand expression
     vexa::dual_value ptr = cpu->value_to_pointer(call.getOperand(1));
     vexa::pointer* ptr_sym = vexa::to_ptr(ptr.v);
@@ -28,8 +28,8 @@ void vexa::cpu::emulator::write_memory_intrinsic(llvm::CallInst& call, size_t si
 
     // get value operand expression
     llvm::Value* val = call.getOperand(2);
-    vexa::value* val_sym = VEXA_SYM_VAL(val);
-    VEXA_ASSERT(val_sym->size() == val->getType()->getPrimitiveSizeInBits());
+    vexa::dual_value val_sym = VEXA_VAL(val);
+    VEXA_ASSERT(val_sym.v->size() == val->getType()->getPrimitiveSizeInBits());
 
     // create actual store
     run(builder->CreateStore(val, ptr.l));
@@ -42,7 +42,7 @@ void vexa::cpu::emulator::read_memory_intrinsic(llvm::CallInst& call, size_t siz
 
     // get pointer operand expression
     llvm::Value* val = call.getOperand(1);
-    vexa::value* val_sym = VEXA_SYM_VAL(val);
+    vexa::dual_value val_sym = VEXA_VAL(val);
 
     vexa::dual_value ptr = cpu->value_to_pointer(val);
     vexa::pointer* ptr_sym = vexa::to_ptr(ptr.v);
@@ -139,7 +139,7 @@ vexa::value* vexa::cpu::emulator::visitInstruction(llvm::Instruction& I)
 
 vexa::value* vexa::cpu::emulator::visitFreezeInst(llvm::FreezeInst& I)
 {
-    return VEXA_SYM_VAL(I.getOperand(0));
+    return VEXA_VAL(I.getOperand(0)).v;
 }
 
 vexa::value* vexa::cpu::emulator::visitExtractElementInst(llvm::ExtractElementInst& I)
@@ -147,8 +147,8 @@ vexa::value* vexa::cpu::emulator::visitExtractElementInst(llvm::ExtractElementIn
     auto* vector_type = llvm::dyn_cast<llvm::FixedVectorType>(I.getVectorOperandType());
     VEXA_ASSERT(vector_type);
 
-    vexa::value* vector = VEXA_SYM_VAL(I.getVectorOperand());
-    vexa::value* index = VEXA_SYM_VAL(I.getIndexOperand());
+    vexa::value* vector = VEXA_VAL(I.getVectorOperand()).v;
+    vexa::value* index = VEXA_VAL(I.getIndexOperand()).v;
     uint64_t element_bit_width = I.getType()->getPrimitiveSizeInBits();
     uint64_t element_count = vector_type->getNumElements();
 
@@ -190,9 +190,9 @@ vexa::value* vexa::cpu::emulator::visitExtractElementInst(llvm::ExtractElementIn
 
 vexa::value* vexa::cpu::emulator::visitSelectInst(llvm::SelectInst& I)
 {
-    vexa::value* cond = VEXA_SYM_VAL(I.getCondition());
-    vexa::value* lhs = VEXA_SYM_VAL(I.getTrueValue());
-    vexa::value* rhs = VEXA_SYM_VAL(I.getFalseValue());
+    vexa::value* cond = VEXA_VAL(I.getCondition()).v;
+    vexa::value* lhs = VEXA_VAL(I.getTrueValue()).v;
+    vexa::value* rhs = VEXA_VAL(I.getFalseValue()).v;
 
     z3::expr cond_bool = cond->as_expr() == cond->as_expr().ctx().bv_val(1, 1);
     vexa::value* expr = symex->value(z3::ite(cond_bool, lhs->as_expr(), rhs->as_expr()));
@@ -216,24 +216,25 @@ vexa::value* vexa::cpu::emulator::visitGetElementPtrInst(llvm::GetElementPtrInst
         vexa::value* addr = symex->value(ptr->as_expr() + _offset->as_expr());
         return symex->pointer(addr, ptr->get_page());
     }
-    THROW("getelementptr, this shouldn't happen... please report");
+    THROW("getelementptr, this shouldn't happen...");
 }
 
 vexa::value* vexa::cpu::emulator::visitStoreInst(llvm::StoreInst& I)
 {
     vexa::pointer* ptr = VEXA_SYM_PTR(I.getPointerOperand());
-    vexa::value* val = VEXA_SYM_VAL(I.getValueOperand());
+    vexa::value* val = VEXA_VAL(I.getValueOperand()).v;
     memory->write(ptr, val);
     return symex->concrete(0, 64);
 }
 
 vexa::value* vexa::cpu::emulator::visitLoadInst(llvm::LoadInst& I)
 {
-    vexa::value* ptr_val = symex->get(I.getPointerOperand());
+    vexa::value* ptr_val = VEXA_VAL(I.getPointerOperand()).v;
     if (vexa::pointer* ptr = vexa::dyn_cast<vexa::pointer>(ptr_val->simplify()))
     {
+        llvm::TypeSize read_size = DL.getTypeStoreSizeInBits(I.getType());
         // read from memory
-        vexa::value* read = memory->read(ptr, DL.getTypeStoreSizeInBits(I.getType()));
+        vexa::value* read = memory->read(ptr, read_size);
         return read;
     }
 
@@ -243,8 +244,8 @@ vexa::value* vexa::cpu::emulator::visitLoadInst(llvm::LoadInst& I)
 
 vexa::value* vexa::cpu::emulator::visitBinaryOperator(llvm::BinaryOperator& I)
 {
-    z3::expr lhs = VEXA_SYM_VAL(I.getOperand(0))->as_expr();
-    z3::expr rhs = VEXA_SYM_VAL(I.getOperand(1))->as_expr();
+    z3::expr lhs = VEXA_VAL(I.getOperand(0)).v->as_expr();
+    z3::expr rhs = VEXA_VAL(I.getOperand(1)).v->as_expr();
 
     std::optional<z3::expr> expr;
     switch (I.getOpcode()) {
@@ -296,8 +297,8 @@ vexa::value* vexa::cpu::emulator::visitBinaryOperator(llvm::BinaryOperator& I)
 
 vexa::value* vexa::cpu::emulator::visitICmpInst(llvm::ICmpInst& I)
 {
-    z3::expr lhs = VEXA_SYM_VAL(I.getOperand(0))->as_expr();
-    z3::expr rhs = VEXA_SYM_VAL(I.getOperand(1))->as_expr();
+    z3::expr lhs = VEXA_VAL(I.getOperand(0)).v->as_expr();
+    z3::expr rhs = VEXA_VAL(I.getOperand(1)).v->as_expr();
 
     std::optional<z3::expr> expr;
     switch (I.getCmpPredicate()) {

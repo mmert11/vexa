@@ -33,7 +33,7 @@ bool vexa::passes::state2alloca::run(llvm::Function* func)
     llvm::AllocaInst* slot = builder->CreateAlloca(builder->getInt32Ty());
     {
         auto* addr = builder->CreateInBoundsGEP(
-                         builder->getInt8Ty(), cpu->state_ptr, builder->getInt64(2080));
+                         builder->getInt8Ty(), cpu->state_ptr.l, builder->getInt64(2080));
         builder->CreateStore(
             builder->CreateLoad(builder->getInt32Ty(), addr), slot);
     }
@@ -53,7 +53,7 @@ bool vexa::passes::state2alloca::run(llvm::Function* func)
     auto init_alloca = [&](const remill::Register* r) {
         if (!r->parent)
         {
-            auto reg_addr = builder->CreateInBoundsGEP(builder->getInt8Ty(), cpu->state_ptr, builder->getIntN(64, r->offset), r->name);
+            auto reg_addr = builder->CreateInBoundsGEP(builder->getInt8Ty(), cpu->state_ptr.l, builder->getIntN(64, r->offset), r->name);
             llvm::Value* load = builder->CreateLoad(builder->getIntNTy(r->size * 8), reg_addr);
             builder->CreateStore(load, offset_to_alloca[r->offset]);
         }
@@ -70,7 +70,7 @@ bool vexa::passes::state2alloca::run(llvm::Function* func)
             llvm::GetElementPtrInst* GEP = llvm::dyn_cast<llvm::GetElementPtrInst>(&I);
             if (!GEP) continue;
 
-            if (GEP->getPointerOperand() != cpu->state_ptr)
+            if (GEP->getPointerOperand() != cpu->state_ptr.l)
                 continue;
 
             llvm::APInt offset_(64, 0);
@@ -118,7 +118,7 @@ bool vexa::passes::state2alloca::run(llvm::Function* func)
             for (auto& [offset, alloca] : offset_to_alloca)
             {
                 llvm::Type* ty = llvm::cast<llvm::AllocaInst>(alloca)->getAllocatedType();
-                auto* reg_addr = builder->CreateInBoundsGEP(builder->getInt8Ty(), cpu->state_ptr, builder->getInt64(offset));
+                auto* reg_addr = builder->CreateInBoundsGEP(builder->getInt8Ty(), cpu->state_ptr.l, builder->getInt64(offset));
                 builder->CreateStore(builder->CreateLoad(ty, alloca), reg_addr);
             }
         }

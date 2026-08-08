@@ -73,7 +73,22 @@ vexa::value* vexa::memory::_read(vexa::pointer* addr, int size)
     }
     else
     {
-        return context->symex->symbolic("read_" + std::to_string(Z3_get_ast_hash(*context->z3_context, addr_expr)), size);
+
+        std::vector<z3::expr> possible_values = addr->possible_values(context->cpu->path_constraints);
+
+
+        z3::expr final = context->symex->concrete(0, size)->as_expr();
+        for (auto& solved_addr : possible_values)
+        {
+            auto page = context->cpu->get_page(context->symex->value(solved_addr)).v->get_page();
+            auto val = _read(context->symex->pointer(solved_addr.as_uint64(), page), size);
+            final = z3::ite(addr_expr == solved_addr, val->as_expr(), final);
+            LOG_WARNING(logger, "Solved -> {} : {}", solved_addr.as_uint64(), val->as_expr().to_string());
+        }
+
+        //LOG_WARNING(logger, "{}", addr_expr.to_string());
+        //LOG_WARNING(logger, "{}", final.simplify().to_string());
+        return context->symex->value(final);
     }
 }
 

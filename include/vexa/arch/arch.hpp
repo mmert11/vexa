@@ -13,7 +13,7 @@
 
 #define LLVM_INST(val) llvm::dyn_cast<llvm::Instruction>(val)
 #define VEXA_EXEC(val) emulate->run(llvm::dyn_cast<llvm::Instruction>(val))
-#define VEXA_SYM_VAL(llvm_ptr) symex->get(llvm_ptr)
+#define VEXA_VAL(llvm_ptr) vexa::dual_value{llvm_ptr, symex->get(llvm_ptr)}
 #define VEXA_SYM_PTR(llvm_ptr) vexa::to_ptr(symex->get(llvm_ptr))
 
 namespace vexa {
@@ -72,6 +72,7 @@ public:
         llvm::BasicBlock* bb;
         bool vjmp;
         std::unordered_map<uint64_t, llvm::BasicBlock *> path;
+        std::vector<z3::expr> path_constraints;
     };
 
     friend emulator;
@@ -91,6 +92,7 @@ public:
     internal_lifter_status lift_instruction(remill::Instruction inst);
     vexa::value* stack_access(uint64_t offset);
     void replace_remill_intrinsics();
+    vexa::dual_pointer get_page(vexa::value* v);
     vexa::dual_value value_to_pointer(llvm::Value* addr);
     vexa::dual_value get_next_pc(llvm::BasicBlock* BB);
     vexa::dual_value get_condition(llvm::BasicBlock* BB);
@@ -115,20 +117,22 @@ public:
     int lifted_count = 0;
     uint64_t VPC = 0;
     std::stack<snapshot> unexplored_paths;
+    std::vector<z3::expr> path_constraints;
 
     //vexa::utils::OrderedMap<uint64_t, llvm::BasicBlock*> CFG;
     std::unordered_map<uint64_t, llvm::BasicBlock *> CFG, VCFG, PATH;
 
     remill::Instruction instruction;
     llvm::BasicBlock* block;
-    vexa::dual_value stack_ptr, next_pc, branch_taken;
+    vexa::dual_pointer stack_ptr, next_pc, branch_taken;
     uint64_t PC = 0;
 
     remill::Arch::ArchPtr arch;
     remill::DecodingContext dec_context;
     std::optional<remill::IntrinsicTable> intrinsics;
     std::optional<remill::InstructionLifter> lifter;
-    llvm::Value *state_ptr, *pc_arg, *mem_ptr;
+    vexa::dual_value pc_arg;
+    vexa::dual_pointer state_ptr, mem_ptr;
 
     llvm::Function* vexa_lifted = nullptr;
     vexa::context* context;

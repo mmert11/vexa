@@ -19,7 +19,8 @@ vexa::cpu::snapshot vexa::cpu::take_snapshot(uint64_t pc, llvm::BasicBlock* bb)
         VPC,
         bb,
         VJMP,
-        PATH
+        PATH,
+        path_constraints
     };
 }
 
@@ -31,6 +32,7 @@ void vexa::cpu::restore_snapshot(vexa::cpu::snapshot ss)
     VPC = ss.vpc;
     VJMP = ss.vjmp;
     PATH = std::move(ss.path);
+    path_constraints = ss.path_constraints;
 }
 
 remill::Register* vexa::cpu::get_register(vexa::reg_t r)
@@ -76,22 +78,25 @@ void vexa::cpu::initialize_arch()
     // function arguments
     //
     auto args = vexa_lifted->arg_begin();
-    state_ptr = &*args++;
-    pc_arg = &*args++;
-    mem_ptr = &*args++;
+    auto init_arg_val = [&](vexa::value* v) -> vexa::dual_value
+    {
+        auto* ptr = &*args++;
+        symex->set(ptr, v);
+        return {ptr, v};
+    };
 
     // create and set expressions for arguments
     //
-    symex->set(state_ptr, symex->pointer(symex->concrete(0, 64), memory->allocate()));
-    symex->set(pc_arg, symex->concrete(0, 64));
-    symex->set(mem_ptr, symex->pointer(symex->concrete(0, 64), global_memory));
+    state_ptr = init_arg_val(symex->pointer(symex->concrete(0, 64), memory->allocate())).to_ptr();
+    pc_arg = init_arg_val(symex->concrete(0, 64));
+    mem_ptr = init_arg_val(symex->pointer(symex->concrete(0, 64), global_memory)).to_ptr();
 
     // load all registers in entry block for once, so they're not loaded when needed during lifting
     //
     auto init_registers = [&](const remill::Register* r) {
-        r->AddressOf(state_ptr, &vexa_lifted->front());
+        r->AddressOf(state_ptr.l, &vexa_lifted->front());
         if (!r->parent)
-            memory->write(symex->pointer(symex->concrete(r->offset, 64), VEXA_SYM_PTR(state_ptr)->get_page()),
+            memory->write(symex->pointer(symex->concrete(r->offset, 64), state_ptr.v->get_page()),
                           symex->symbolic(r->name, r->size * 8));
     };
     arch->ForEachRegister(init_registers);
@@ -110,13 +115,13 @@ void vexa::cpu::initialize_arch()
 
 vexa::value* vexa::cpu::read_register(vexa::reg_t r)
 {
-    auto ptr = symex->pointer(symex->concrete(registers[r]->offset, 64), VEXA_SYM_PTR(state_ptr)->get_page());
+    auto ptr = symex->pointer(symex->concrete(registers[r]->offset, 64), state_ptr.v->get_page());
     return memory->read(ptr, registers[r]->size * 8);
 }
 
 void vexa::cpu::write_register(vexa::reg_t r, vexa::value* val)
 {
-    auto ptr = symex->pointer(symex->concrete(registers[r]->offset, 64), VEXA_SYM_PTR(state_ptr)->get_page());
+    auto ptr = symex->pointer(symex->concrete(registers[r]->offset, 64), state_ptr.v->get_page());
     memory->write(ptr, val);
 }
 
@@ -139,7 +144,7 @@ void vexa::cpu::run(uint64_t pc)
 
     // concretize stack pointer
     //
-    llvm::Value* sp = get_register(vexa::amd64::SP)->AddressOf(state_ptr, *builder);
+    llvm::Value* sp = get_register(vexa::amd64::SP)->AddressOf(state_ptr.l, *builder);
     builder->CreateStore(builder->getIntN(64, -8), sp);
 
     // init return address as zero, when function ends with an indirect jump, this value will be read
@@ -152,8 +157,8 @@ void vexa::cpu::run(uint64_t pc)
     // execute the entry block, then we are ready for lifting
     //
     emulate->run_block(&vexa_lifted->front());
-    next_pc = builder->get_value_by_name("NEXT_PC");
-    branch_taken = builder->get_value_by_name("BRANCH_TAKEN");
+    next_pc = builder->get_value_by_name("NEXT_PC").to_ptr();
+    branch_taken = builder->get_value_by_name("BRANCH_TAKEN").to_ptr();
 
     uint64_t concrete_gs_base = 0x7fffff000000;
     uint64_t concrete_peb_addr = 0x7fffff800000;
@@ -177,7 +182,7 @@ void vexa::cpu::run(uint64_t pc)
         {
         case internal_lifter_status::function_ended:
             LOG_INFO(logger, "Reached the end of the function");
-            builder->CreateRet(state_ptr);
+            builder->CreateRet(state_ptr.l);
             [[fallthrough]];
         case internal_lifter_status::explore_other_paths:
         {
@@ -335,7 +340,7 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
     // lift instruction using remill, inline the semantics
     //
     VEXA_EXEC(builder->CreateStore(builder->getIntN(64, PC), next_pc.l));
-    const auto status = lifter->LiftIntoBlock(inst, block, state_ptr);
+    const auto status = lifter->LiftIntoBlock(inst, block, state_ptr.l);
     if (status != remill::kLiftedInstruction)
     {
         LOG_ERROR(
@@ -392,11 +397,33 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
         }
 
         // INDIRECT JUMP
-        vexa::value* next = get_next_pc(block).v->simplify();
+        vexa::dual_value next_dual = get_next_pc(block);
+        vexa::value* next = next_dual.v->simplify();
         if (next->is_concrete())
         {
             PC = next->as_uint64();
             EVENT_HANDLER(event_kind::INDIRECT_JUMP);
+            return internal_lifter_status::successful;
+        }
+
+        auto possible_addrs = next->possible_values(path_constraints);
+        for (auto& possible_addr : possible_addrs)
+        {
+            LOG_WARNING(logger, "Solved address -> {}", possible_addr.as_uint64());
+        }
+
+        // SOLVED ONLY ONE PATH
+        if (possible_addrs.size() == 1)
+        {
+            PC = possible_addrs.back().as_uint64();
+            return internal_lifter_status::successful;
+        }
+
+        // TWO PATHS
+        if (possible_addrs.size() == 2)
+        {
+            vexa::dual_value cond = VEXA_EXEC(builder->CreateICmpEQ(next_dual.l, builder->getInt64(possible_addrs.front().as_uint64())));
+            branching(cond, possible_addrs.front().as_uint64(), possible_addrs.back().as_uint64());
             return internal_lifter_status::successful;
         }
 
@@ -408,7 +435,7 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
     }
     // custom handling of cmov semantics
     //
-    else if (inst.function.starts_with("CMOV"))
+    else if (inst.function.starts_with("CMOV") && true)
         handle_conditional_moves(inst, block);
 
     PC = inst.next_pc;
@@ -429,12 +456,14 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
             {
                 // OPAQUE TAKEN
                 PC = jump_pc;
+                path_constraints.push_back(condition.v->as_expr_bool());
                 EVENT_HANDLER(event_kind::CONDITIONAL_TAKEN);
             }
             else
             {
                 // OPAQUE NOT TAKEN
                 PC = fallthrough_pc;
+                path_constraints.push_back(!condition.v->as_expr_bool());
                 EVENT_HANDLER(event_kind::CONDITIONAL_FALLTHROUGH);
             }
 
@@ -447,12 +476,21 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
     llvm::BasicBlock *jump_bb = builder->basic_block(utils::addr_to_str(jump_pc));
     llvm::BasicBlock *fallthrough_bb = builder->basic_block(utils::addr_to_str(fallthrough_pc));
 
+    // save fallthrough path
+    //
+    path_constraints.push_back(!condition.v->as_expr_bool());
     snapshot path_s = take_snapshot(fallthrough_pc, fallthrough_bb);
     unexplored_paths.push(path_s);
 
+    // create conditional jump
+    //
     builder->CreateCondBr(condition.l, jump_bb, fallthrough_bb);
     builder->SetInsertPoint(jump_bb);
 
+    // set execution to taken path
+    //
+    path_constraints.pop_back();
+    path_constraints.push_back(condition.v->as_expr_bool());
     LOG_INFO(logger, "Path forking");
     PC = jump_pc;
 
@@ -557,7 +595,7 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
     }
 
     llvm::Value* store_ptr = store->getPointerOperand();
-    vexa::value* cond_val = VEXA_SYM_VAL(select->getCondition());
+    vexa::dual_value cond_val = VEXA_VAL(select->getCondition());
 
     auto materialize = [&](llvm::Value* value)
     {
@@ -581,14 +619,20 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
     if (context->get_option(vexa::option::OPAQUE_SOLVING) && mode != mode_t::VCFG_RECOVERY)
     {
         bool result;
-        if (opaque_solver(cond_val, result))
+        if (opaque_solver(cond_val.v, result))
         {
             builder->deleteLater(store);
 
             if (result)
+            {
+                path_constraints.push_back(cond_val.v->as_expr_bool());
                 VEXA_EXEC(builder->CreateStore(true_val, store_ptr));
+            }
             else
+            {
+                path_constraints.push_back(!cond_val.v->as_expr_bool());
                 VEXA_EXEC(builder->CreateStore(false_val, store_ptr));
+            }
 
             return;
         }
@@ -647,7 +691,7 @@ vexa::dual_value vexa::cpu::get_next_pc(llvm::BasicBlock* BB)
             {
                 // if yes, we return the value operand
                 auto *val = store->getValueOperand();
-                return vexa::dual_value(val, VEXA_SYM_VAL(val));
+                return VEXA_VAL(val);
             }
         }
     }
@@ -655,6 +699,20 @@ vexa::dual_value vexa::cpu::get_next_pc(llvm::BasicBlock* BB)
     THROW("Couldn't get next pc");
 }
 
+vexa::dual_pointer vexa::cpu::get_page(vexa::value* value)
+{
+    vexa::value* v = value;
+    int64_t signed_addr = static_cast<int64_t>(v->as_uint64());
+    if ((signed_addr <= 0 && signed_addr >= -8192))
+    {
+        // stack access
+        return stack_ptr;
+    }
+    else
+    {
+        return mem_ptr;
+    }
+}
 
 vexa::dual_value vexa::cpu::value_to_pointer(llvm::Value* addr)
 {
@@ -662,32 +720,15 @@ vexa::dual_value vexa::cpu::value_to_pointer(llvm::Value* addr)
     builder->push_ip();
 
     // get value and simplify
-    vexa::value* v = VEXA_SYM_VAL(addr);
+    vexa::dual_value dv = VEXA_VAL(addr);
+    vexa::value* v = dv.v;
     v->simplify();
 
     vexa::dual_value ptr;
     if (v->is_concrete())
     {
-        // if its lower than 0, we take it as a stack access
-        // TODO: implement a better stack access detection method
-        int64_t signed_addr = static_cast<int64_t>(v->as_uint64());
-        if ((signed_addr <= 0 && signed_addr >= -8192)) // || (signed_addr > 5000 && signed_addr < 6500)
-        {
-            // stack access
-            ptr = builder->inbounds_gep(builder->getInt8Ty(), stack_ptr.l, addr);
-        }
-        else if ((signed_addr > 0 && signed_addr < 100000) && false)
-        {
-            // experimental
-            //
-            ptr = builder->inbounds_gep(builder->getInt8Ty(), mem_ptr, addr);
-            ptr.l = builder->CreateInBoundsGEP(builder->getInt8Ty(), stack_ptr.l, addr);
-            symex->set(ptr.l, ptr.v);
-        }
-        else
-        {
-            ptr = builder->inbounds_gep(builder->getInt8Ty(), mem_ptr, addr);
-        }
+        vexa::dual_pointer page = get_page(dv.v);
+        ptr = builder->inbounds_gep(builder->getInt8Ty(), page.l, addr);
     }
     else
     {
