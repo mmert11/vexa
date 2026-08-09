@@ -1,9 +1,7 @@
 #include <vexa/vexa.h>
 
-vexa::global::global(llvm::GlobalVariable* _lval, const llvm::DataLayout* _DL) : val(_lval), DL(_DL)
-{
-
-}
+vexa::global::global(llvm::GlobalVariable *_lval, const llvm::DataLayout *_DL) : val(_lval), DL(_DL)
+{}
 
 uint64_t vexa::global::size() const
 {
@@ -16,7 +14,7 @@ std::string vexa::global::name() const
 {
     return val->getName().str();
 }
-llvm::Value* vexa::global::as_llvm() const
+llvm::Value *vexa::global::as_llvm() const
 {
     return val;
 }

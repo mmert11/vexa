@@ -2,7 +2,7 @@ set_project("vexa")
 set_version("1.3")
 
 add_rules("mode.debug", "mode.release")
-add_requires("llvm", "z3", "lief", "quill", "cli11")
+add_requires("llvm", "bitwuzla", "lief", "quill", "cli11")
 
 option("remill")
 	-- !!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -18,7 +18,7 @@ target("vexa")
     add_rules("utils.install.cmake_importfiles")
     add_files("src/*.cpp", "src/**/*.cpp")
     add_includedirs("include", {public = true})
-    add_packages("llvm", "z3", "lief", "quill")
+    add_packages("llvm", "bitwuzla", "lief", "quill")
 
     -- install options
     set_languages("c++20")

@@ -5,23 +5,17 @@
 
 #include <remill/BC/Util.h>
 
+#include <bitwuzla/cpp/bitwuzla.h>
+
 #define EVENT_HANDLER(event_k) context->event_handler(event_k);
 
-vexa::cpu::cpu(vexa::context* _context)  :
-    context(_context), builder(context->builder), symex(context->symex), memory(context->memory)
-{ }
+vexa::cpu::cpu(vexa::context *_context)
+    : context(_context), builder(context->builder), symex(context->symex), memory(context->memory)
+{}
 
-vexa::cpu::snapshot vexa::cpu::take_snapshot(uint64_t pc, llvm::BasicBlock* bb)
+vexa::cpu::snapshot vexa::cpu::take_snapshot(uint64_t pc, llvm::BasicBlock *bb)
 {
-    return vexa::cpu::snapshot{
-        memory->take_snapshot(),
-        pc,
-        VPC,
-        bb,
-        VJMP,
-        PATH,
-        path_constraints
-    };
+    return vexa::cpu::snapshot{memory->take_snapshot(), pc, VPC, bb, VJMP, PATH, path_constraints};
 }
 
 void vexa::cpu::restore_snapshot(vexa::cpu::snapshot ss)
@@ -35,7 +29,7 @@ void vexa::cpu::restore_snapshot(vexa::cpu::snapshot ss)
     path_constraints = ss.path_constraints;
 }
 
-remill::Register* vexa::cpu::get_register(vexa::reg_t r)
+remill::Register *vexa::cpu::get_register(vexa::reg_t r)
 {
     VEXA_ASSERT(registers.count(r));
     return registers[r];
@@ -51,10 +45,9 @@ void vexa::cpu::initialize_arch()
 {
     // initialize registers
     //
-    auto callback = [&](const remill::Register* r)
-    {
+    auto callback = [&](const remill::Register *r) {
         vexa::reg_t reg = str2reg(r->name);
-        registers[reg] = (remill::Register*)r;
+        registers[reg] = (remill::Register *)r;
     };
     arch->ForEachRegister(callback);
 
@@ -78,9 +71,8 @@ void vexa::cpu::initialize_arch()
     // function arguments
     //
     auto args = vexa_lifted->arg_begin();
-    auto init_arg_val = [&](vexa::value* v) -> vexa::dual_value
-    {
-        auto* ptr = &*args++;
+    auto init_arg_val = [&](vexa::value *v) -> vexa::dual_value {
+        auto *ptr = &*args++;
         symex->set(ptr, v);
         return {ptr, v};
     };
@@ -91,13 +83,15 @@ void vexa::cpu::initialize_arch()
     pc_arg = init_arg_val(symex->concrete(0, 64));
     mem_ptr = init_arg_val(symex->pointer(symex->concrete(0, 64), global_memory)).to_ptr();
 
-    // load all registers in entry block for once, so they're not loaded when needed during lifting
+    // load all registers in entry block for once, so they're not loaded when
+    // needed during lifting
     //
-    auto init_registers = [&](const remill::Register* r) {
+    auto init_registers = [&](const remill::Register *r) {
         r->AddressOf(state_ptr.l, &vexa_lifted->front());
         if (!r->parent)
-            memory->write(symex->pointer(symex->concrete(r->offset, 64), state_ptr.v->get_page()),
-                          symex->symbolic(r->name, r->size * 8));
+            memory->write(
+                symex->pointer(symex->concrete(r->offset, 64), state_ptr.v->get_page()),
+                symex->symbolic(r->name, r->size * 8));
     };
     arch->ForEachRegister(init_registers);
 
@@ -113,13 +107,13 @@ void vexa::cpu::initialize_arch()
     replace_remill_intrinsics();
 }
 
-vexa::value* vexa::cpu::read_register(vexa::reg_t r)
+vexa::value *vexa::cpu::read_register(vexa::reg_t r)
 {
     auto ptr = symex->pointer(symex->concrete(registers[r]->offset, 64), state_ptr.v->get_page());
     return memory->read(ptr, registers[r]->size * 8);
 }
 
-void vexa::cpu::write_register(vexa::reg_t r, vexa::value* val)
+void vexa::cpu::write_register(vexa::reg_t r, vexa::value *val)
 {
     auto ptr = symex->pointer(symex->concrete(registers[r]->offset, 64), state_ptr.v->get_page());
     memory->write(ptr, val);
@@ -131,32 +125,35 @@ void vexa::cpu::run(uint64_t pc)
     //      %stack = alloca i8, i64 8192
     //
     std::shared_ptr<mem_page> stack_page = memory->allocate();
-    llvm::AllocaInst* stack = builder->CreateAlloca(builder->getInt8Ty(), builder->getIntN(64, 8192), "stack");
+    llvm::AllocaInst *stack =
+        builder->CreateAlloca(builder->getInt8Ty(), builder->getIntN(64, 8192), "stack");
     symex->set(stack, symex->pointer(symex->concrete(0, 64), stack_page));
 
     // stack pointer
     //      %stack_ptr = getelementptr inbounds i8, ptr %stack, i64 4096
     //
-    llvm::Value* stack_ptr_l = builder->CreateInBoundsGEP(builder->getInt8Ty(), stack, builder->getIntN(64, 4096), "stack_ptr");
-    vexa::pointer* stack_ptr_v = symex->pointer(4096, stack_page);
+    llvm::Value *stack_ptr_l = builder->CreateInBoundsGEP(
+        builder->getInt8Ty(), stack, builder->getIntN(64, 4096), "stack_ptr");
+    vexa::pointer *stack_ptr_v = symex->pointer(4096, stack_page);
     symex->set(stack_ptr_l, stack_ptr_v);
     stack_ptr = {stack_ptr_l, stack_ptr_v};
 
     // concretize stack pointer
     //
-    llvm::Value* sp = get_register(vexa::amd64::SP)->AddressOf(state_ptr.l, *builder);
+    llvm::Value *sp = get_register(vexa::amd64::SP)->AddressOf(state_ptr.l, *builder);
     builder->CreateStore(builder->getIntN(64, -8), sp);
 
-    // init return address as zero, when function ends with an indirect jump, this value will be read
+    // init return address as zero, when function ends with an indirect jump, this
+    // value will be read
     //
-    auto* s = builder->CreateInBoundsGEP(builder->getInt8Ty(),
-                                         stack_ptr.l,
-                                         builder->getIntN(64, -8));
+    auto *s =
+        builder->CreateInBoundsGEP(builder->getInt8Ty(), stack_ptr.l, builder->getIntN(64, -8));
     builder->CreateStore(builder->getIntN(64, 0), s);
 
     // execute the entry block, then we are ready for lifting
     //
     emulate->run_block(&vexa_lifted->front());
+    stack_ptr.v = vexa::to_ptr(symex->get(stack_ptr.l)->simplify());
     next_pc = builder->get_value_by_name("NEXT_PC").to_ptr();
     branch_taken = builder->get_value_by_name("BRANCH_TAKEN").to_ptr();
 
@@ -169,25 +166,22 @@ void vexa::cpu::run(uint64_t pc)
     memory->write(vexa::to_ptr(symex->get(GS.l)), symex->concrete(concrete_gs_base, 64));
     auto peb_loc = symex->pointer(symex->concrete(concrete_gs_base + 0x60, 64), global_memory);
     memory->write(peb_loc, symex->concrete(concrete_peb_addr, 64));
-    auto image_base_loc = symex->pointer(symex->concrete(concrete_peb_addr + 0x10, 64), global_memory);
+    auto image_base_loc =
+        symex->pointer(symex->concrete(concrete_peb_addr + 0x10, 64), global_memory);
     memory->write(image_base_loc, symex->concrete(concrete_image_base, 64));
 
     PC = pc;
     mode = (mode_t)context->get_option(vexa::option::MODE);
 
-    while (true)
-    {
+    while (true) {
         internal_lifter_status status = process_instruction();
-        switch (status)
-        {
+        switch (status) {
         case internal_lifter_status::function_ended:
             LOG_INFO(logger, "Reached the end of the function");
             builder->CreateRet(state_ptr.l);
             [[fallthrough]];
-        case internal_lifter_status::explore_other_paths:
-        {
-            if (unexplored_paths.empty())
-            {
+        case internal_lifter_status::explore_other_paths: {
+            if (unexplored_paths.empty()) {
                 LOG_INFO(logger, "No more paths to explore");
                 goto ret; // finish execution
             }
@@ -210,13 +204,12 @@ ret:
 
     // clear all metadata
     //
-    for (auto& BB : *vexa_lifted)
-    {
-        for (auto& I : BB) {
-            llvm::SmallVector<std::pair<unsigned, llvm::MDNode*>, 8> MDs;
+    for (auto &BB : *vexa_lifted) {
+        for (auto &I : BB) {
+            llvm::SmallVector<std::pair<unsigned, llvm::MDNode *>, 8> MDs;
             I.getAllMetadataOtherThanDebugLoc(MDs);
 
-            for (auto& MD : MDs) {
+            for (auto &MD : MDs) {
                 I.setMetadata(MD.first, nullptr);
             }
 
@@ -232,43 +225,35 @@ bool vexa::cpu::CFG_recovery(vexa::mode_t mode)
 {
     // CFG RECOVERY
     //
-    if (mode == mode_t::CFG_RECOVERY)
-    {
-        if (context->get_option(option::CFG_JOIN_POLICY) == cfg_join_policy_t::SPECIALIZE_BY_PATH)
-        {
+    if (mode == mode_t::CFG_RECOVERY) {
+        if (context->get_option(option::CFG_JOIN_POLICY) == cfg_join_policy_t::SPECIALIZE_BY_PATH) {
             auto lifted = PATH.find(VPC);
-            if (lifted != PATH.end())
-            {
+            if (lifted != PATH.end()) {
                 builder->CreateBr(lifted->second);
                 VJMP = false;
                 return true;
             }
         }
-        else if (CFG.contains(PC))
-        {
+        else if (CFG.contains(PC)) {
             builder->CreateBr(CFG[PC]);
             return true;
         }
     }
     // VCFG RECOVERY
     //
-    else if (mode == mode_t::VCFG_RECOVERY)
-    {
+    else if (mode == mode_t::VCFG_RECOVERY) {
         if (!VJMP)
             return false;
 
-        if (context->get_option(option::CFG_JOIN_POLICY) == cfg_join_policy_t::SPECIALIZE_BY_PATH)
-        {
+        if (context->get_option(option::CFG_JOIN_POLICY) == cfg_join_policy_t::SPECIALIZE_BY_PATH) {
             auto lifted = PATH.find(VPC);
-            if (lifted != PATH.end())
-            {
+            if (lifted != PATH.end()) {
                 builder->CreateBr(lifted->second);
                 VJMP = false;
                 return true;
             }
         }
-        else if (VCFG.contains(VPC))
-        {
+        else if (VCFG.contains(VPC)) {
             builder->CreateBr(VCFG[VPC]);
             VJMP = false;
             return true;
@@ -287,8 +272,7 @@ vexa::cpu::internal_lifter_status vexa::cpu::process_instruction()
 
     // build the CFG
     //
-    if (CFG_recovery(mode))
-    {
+    if (CFG_recovery(mode)) {
         LOG_INFO(logger, "Control flow edge rebuilt");
         return internal_lifter_status::explore_other_paths;
     }
@@ -299,21 +283,22 @@ vexa::cpu::internal_lifter_status vexa::cpu::process_instruction()
     // read 15 bytes at program counter
     // custom memory access for performance
     //
-    auto& cm = global_memory->concrete_memory;
-    for (int i = 0; i < 15; i++)
-    {
+    auto &cm = global_memory->concrete_memory;
+    for (int i = 0; i < 15; i++) {
         auto it = cm.find(PC + i);
-        if (it == cm.end() || !it->second.has_value()) break;
-        const z3::expr& byte_expr = (*it->second);
-        if (!byte_expr.is_numeral()) break;
-        bytes_str.push_back(static_cast<char>(byte_expr.get_numeral_uint64() & 0xFF));
+        if (it == cm.end() || !it->second.has_value())
+            break;
+        const bw::Term &byte_expr = *it->second;
+        if (!byte_expr.is_value())
+            break;
+        bytes_str.push_back(static_cast<char>(vexa::value::as_uint64(byte_expr) & 0xFF));
     }
 
     // disassemble instruction
     //
     remill::Instruction inst;
     if (!arch->DecodeInstruction(PC, bytes_str, inst, dec_context)) {
-        LOG_WARNING(logger, "Disassemble fail");
+        LOG_WARNING(logger, "Disassemble fail -> {:#x}", PC);
         return internal_lifter_status::explore_other_paths;
     }
     instruction = inst;
@@ -341,35 +326,31 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
     //
     VEXA_EXEC(builder->CreateStore(builder->getIntN(64, PC), next_pc.l));
     const auto status = lifter->LiftIntoBlock(inst, block, state_ptr.l);
-    if (status != remill::kLiftedInstruction)
-    {
+    if (status != remill::kLiftedInstruction) {
         LOG_ERROR(
             logger,
             "Lifting failed for instruction -> {} : {}",
             inst.disassembly,
-            static_cast<int>(status)
-        );
+            static_cast<int>(status));
 
         builder->CreateUnreachable();
         PC = -1;
         return internal_lifter_status::explore_other_paths;
     }
 
-    // emulate the lifted block in z3
+    // emulate the lifted block in Bitwuzla
     //
     emulate->run_block(block);
 
     // save the lifted block
     //
-    if (mode == mode_t::CFG_RECOVERY)
-    {
+    if (mode == mode_t::CFG_RECOVERY) {
         if (context->get_option(option::CFG_JOIN_POLICY) == cfg_join_policy_t::SPECIALIZE_BY_PATH)
             PATH[PC] = block;
         else
             CFG[PC] = block;
     }
-    else if (mode == mode_t::VCFG_RECOVERY)
-    {
+    else if (mode == mode_t::VCFG_RECOVERY) {
         if (context->get_option(option::CFG_JOIN_POLICY) == cfg_join_policy_t::SPECIALIZE_BY_PATH)
             PATH.try_emplace(VPC, block);
         else
@@ -378,19 +359,16 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
 
     // control flow
     //
-    if (inst.IsControlFlow())
-    {
+    if (inst.IsControlFlow()) {
         // CONDITIONAL
-        if (inst.IsConditionalBranch())
-        {
+        if (inst.IsConditionalBranch()) {
             vexa::dual_value cond = get_condition(block);
             branching(cond, inst.branch_taken_pc, inst.branch_not_taken_pc);
             return internal_lifter_status::successful;
         }
 
         // DIRECT JUMP
-        if (inst.IsDirectControlFlow())
-        {
+        if (inst.IsDirectControlFlow()) {
             PC = inst.branch_taken_pc;
             EVENT_HANDLER(event_kind::DIRECT_JUMP);
             return internal_lifter_status::successful;
@@ -398,72 +376,173 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
 
         // INDIRECT JUMP
         vexa::dual_value next_dual = get_next_pc(block);
-        vexa::value* next = next_dual.v->simplify();
-        if (next->is_concrete())
-        {
+        vexa::value *next = next_dual.v->simplify();
+        if (next->is_concrete()) {
             PC = next->as_uint64();
             EVENT_HANDLER(event_kind::INDIRECT_JUMP);
             return internal_lifter_status::successful;
         }
 
+        //        LOG_WARNING(logger, "Solving -> {}", next->as_expr().str());
+
         auto possible_addrs = next->possible_values(path_constraints);
-        for (auto& possible_addr : possible_addrs)
-        {
-            LOG_WARNING(logger, "Solved address -> {}", possible_addr.as_uint64());
+        for (auto &possible_addr : possible_addrs) {
+            LOG_WARNING(logger, "Solved address -> {}", vexa::value::as_uint64(possible_addr));
         }
 
-        // SOLVED ONLY ONE PATH
-        if (possible_addrs.size() == 1)
-        {
-            PC = possible_addrs.back().as_uint64();
+        // ONE PATH
+        if (possible_addrs.size() == 1) {
+            PC = vexa::value::as_uint64(possible_addrs.back());
             return internal_lifter_status::successful;
         }
 
         // TWO PATHS
-        if (possible_addrs.size() == 2)
-        {
-            vexa::dual_value cond = VEXA_EXEC(builder->CreateICmpEQ(next_dual.l, builder->getInt64(possible_addrs.front().as_uint64())));
-            branching(cond, possible_addrs.front().as_uint64(), possible_addrs.back().as_uint64());
+        if (possible_addrs.size() == 2) {
+            vexa::dual_value cond = VEXA_EXEC(builder->CreateICmpEQ(
+                next_dual.l, builder->getInt64(vexa::value::as_uint64(possible_addrs.front()))));
+            branching(
+                cond,
+                vexa::value::as_uint64(possible_addrs.front()),
+                vexa::value::as_uint64(possible_addrs.back()));
             return internal_lifter_status::successful;
         }
 
-        LOG_DEBUG(logger, "{}", next->as_expr().to_string());
+        LOG_DEBUG(logger, "{}", next->as_expr().str());
         LOG_ERROR(logger, "Unresolved indirect jump");
         return internal_lifter_status::explore_other_paths;
 
-        //THROW("Unresolved jump");
+        // THROW("Unresolved jump");
     }
-    // custom handling of cmov semantics
-    //
-    else if (inst.function.starts_with("CMOV") && true)
+    else if (inst.function.starts_with("CMOV") && false)
         handle_conditional_moves(inst, block);
 
     PC = inst.next_pc;
     return internal_lifter_status::successful;
 }
 
+void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBlock *block)
+{
+    struct value_wrapper
+    {
+        llvm::Instruction *instruction;
+        unsigned selected_operand;
+    };
+
+    llvm::StoreInst *store = nullptr;
+    llvm::SelectInst *select = nullptr;
+    llvm::SmallVector<llvm::Instruction *, 2> wrappers;
+
+    auto peel_select = [&](llvm::Value *value) -> llvm::SelectInst * {
+        while (true) {
+            if (auto *found = llvm::dyn_cast<llvm::SelectInst>(value))
+                return found;
+
+            if (auto *cast = llvm::dyn_cast<llvm::CastInst>(value)) {
+                wrappers.push_back(cast);
+                value = cast->getOperand(0);
+                continue;
+            }
+
+            auto *binary = llvm::dyn_cast<llvm::BinaryOperator>(value);
+            if (binary && binary->getOpcode() == llvm::Instruction::And) {
+                wrappers.push_back(binary);
+                value = binary->getOperand(0);
+                continue;
+            }
+
+            return nullptr;
+        }
+    };
+
+    for (auto it = block->rbegin(), end = block->rend(); it != end; ++it) {
+        auto *candidate = llvm::dyn_cast<llvm::StoreInst>(&*it);
+        if (!candidate)
+            continue;
+
+        wrappers.clear();
+        select = peel_select(candidate->getValueOperand());
+        if (select) {
+            store = candidate;
+            break;
+        }
+    }
+
+    if (!store) {
+        LOG_WARNING(logger, "Unsupported CMOV IR: {}", inst.function);
+        LOG_WARNING(logger, "Please report at https://github.com/mmert11/vexa/issues");
+        THROW("Error during handling CMOVxx");
+        return;
+    }
+
+    llvm::Value *store_ptr = store->getPointerOperand();
+    vexa::dual_value cond_val = VEXA_VAL(select->getCondition());
+
+    auto materialize = [&](llvm::Value *value) {
+        for (auto it = wrappers.rbegin(); it != wrappers.rend(); ++it) {
+            llvm::Instruction *cloned = (*it)->clone();
+            cloned->setOperand(0, value);
+            builder->Insert(cloned);
+            value = VEXA_EXEC(cloned).l;
+        }
+        return value;
+    };
+
+    llvm::Value *true_val = materialize(select->getTrueValue());
+    llvm::Value *false_val = materialize(select->getFalseValue());
+
+    if (context->get_option(vexa::option::OPAQUE_SOLVING) && mode != mode_t::VCFG_RECOVERY) {
+        bool result;
+        if (opaque_solver(cond_val.v, result)) {
+            builder->deleteLater(store);
+
+            if (result) {
+                path_constraints.push_back(cond_val.v->as_expr_bool());
+                VEXA_EXEC(builder->CreateStore(true_val, store_ptr));
+            }
+            else {
+                path_constraints.push_back(!*cond_val.v);
+                VEXA_EXEC(builder->CreateStore(false_val, store_ptr));
+            }
+            return;
+        }
+    }
+
+    vexa::cpu::snapshot base_snapshot = take_snapshot(PC, block);
+    llvm::BasicBlock *true_block = builder->basic_block();
+    llvm::BasicBlock *false_block = builder->basic_block();
+    builder->CreateCondBr(select->getCondition(), true_block, false_block);
+
+    builder->SetInsertPoint(false_block);
+    VEXA_EXEC(builder->CreateStore(false_val, store_ptr));
+    vexa::cpu::snapshot false_path = take_snapshot(inst.next_pc, false_block);
+    unexplored_paths.push(false_path);
+
+    restore_snapshot(base_snapshot);
+    builder->SetInsertPoint(true_block);
+    VEXA_EXEC(builder->CreateStore(true_val, store_ptr));
+
+    builder->deleteLater(store);
+    LOG_INFO(logger, "Path fork by CMOVxx");
+}
+
 void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t fallthrough_pc)
 {
-    if (context->get_option(vexa::option::OPAQUE_SOLVING))
-    {
+    if (context->get_option(vexa::option::OPAQUE_SOLVING)) {
         bool taken;
-        if (opaque_solver(condition.v, taken))
-        {
+        if (opaque_solver(condition.v, taken)) {
             // opaque predicate solved
             // treat this as a direct branch
 
-            if (taken)
-            {
+            if (taken) {
                 // OPAQUE TAKEN
                 PC = jump_pc;
                 path_constraints.push_back(condition.v->as_expr_bool());
                 EVENT_HANDLER(event_kind::CONDITIONAL_TAKEN);
             }
-            else
-            {
+            else {
                 // OPAQUE NOT TAKEN
                 PC = fallthrough_pc;
-                path_constraints.push_back(!condition.v->as_expr_bool());
+                path_constraints.push_back(!*condition.v);
                 EVENT_HANDLER(event_kind::CONDITIONAL_FALLTHROUGH);
             }
 
@@ -478,7 +557,7 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
 
     // save fallthrough path
     //
-    path_constraints.push_back(!condition.v->as_expr_bool());
+    path_constraints.push_back(!*condition.v);
     snapshot path_s = take_snapshot(fallthrough_pc, fallthrough_bb);
     unexplored_paths.push(path_s);
 
@@ -497,180 +576,16 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
     EVENT_HANDLER(vexa::event_kind::PATH_FORKING);
 }
 
-void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBlock* block)
+vexa::dual_value vexa::cpu::get_condition(llvm::BasicBlock *BB)
 {
-    /*
-    CMOVB_GPRv_GPRv_64_:
-        %48 = load i64, ptr %NEXT_PC, align 8
-        store i64 %48, ptr %PC, align 8
-        %49 = add i64 %48, 4
-        store i64 %49, ptr %NEXT_PC, align 8
-        %50 = load i64, ptr %R14, align 8
-        %51 = load ptr, ptr %MEMORY, align 8
-        %52 = getelementptr inbounds nuw i8, ptr %state, i64 2065
-        %53 = load i8, ptr %52, align 1, !tbaa !132
-        %54 = icmp ne i8 %53, 0
-        %55 = load i64, ptr %RAX, align 8, !tbaa !130
-        %56 = select i1 %54, i64 %50, i64 %55
-        store i64 %56, ptr %RAX, align 8, !tbaa !130
-    */
-
-    /*
-    CMOVO_GPRv_GPRv_32_:                              ; preds = %PUSH_GPRv_50_64_3
-        store i64 5369515651, ptr %NEXT_PC, align 8
-        %66 = load i64, ptr %NEXT_PC, align 8
-        store i64 %66, ptr %PC, align 8
-        %67 = add i64 %66, 4
-        store i64 %67, ptr %NEXT_PC, align 8
-        %68 = load i32, ptr %R9D, align 4
-        %69 = zext i32 %68 to i64
-        %70 = load ptr, ptr %MEMORY, align 8
-        %71 = getelementptr inbounds nuw i8, ptr %state, i64 2077
-        %72 = load i8, ptr %71, align 1, !tbaa !133
-        %73 = icmp eq i8 %72, 0
-        %74 = load i64, ptr %R8, align 8, !tbaa !130
-        %75 = select i1 %73, i64 %74, i64 %69
-        %76 = and i64 %75, 4294967295    <-----
-        store i64 %76, ptr %R8, align 8, !tbaa !130
-    */
-
-    struct value_wrapper
-    {
-        llvm::Instruction* instruction;
-        unsigned selected_operand;
-    };
-
-    llvm::StoreInst* store = nullptr;
-    llvm::SelectInst* select = nullptr;
-    llvm::SmallVector<llvm::Instruction*, 2> wrappers;
-
-    auto peel_select = [&](llvm::Value* value) -> llvm::SelectInst*
-    {
-        while (true)
-        {
-            if (auto* found = llvm::dyn_cast<llvm::SelectInst>(value))
-                return found;
-
-            if (auto* cast = llvm::dyn_cast<llvm::CastInst>(value))
-            {
-                wrappers.push_back(cast);
-                value = cast->getOperand(0);
-                continue;
-            }
-
-            auto* binary = llvm::dyn_cast<llvm::BinaryOperator>(value);
-            if (binary && binary->getOpcode() == llvm::Instruction::And)
-            {
-                wrappers.push_back(binary);
-                value = binary->getOperand(0);
-                continue;
-            }
-
-            return nullptr;
-        }
-    };
-
-    for (auto it = block->rbegin(), end = block->rend(); it != end; ++it)
-    {
-        auto* candidate = llvm::dyn_cast<llvm::StoreInst>(&*it);
-        if (!candidate)
-            continue;
-
-        wrappers.clear();
-        select = peel_select(candidate->getValueOperand());
-
-        if (select)
-        {
-            store = candidate;
-            break;
-        }
-    }
-
-    if (!store)
-    {
-        LOG_WARNING(logger, "Unsupported CMOV IR: {}", inst.function);
-        LOG_WARNING(logger, "Please report at https://github.com/mmert11/vexa/issues");
-        THROW("Error during handling CMOVxx");
-        return;
-    }
-
-    llvm::Value* store_ptr = store->getPointerOperand();
-    vexa::dual_value cond_val = VEXA_VAL(select->getCondition());
-
-    auto materialize = [&](llvm::Value* value)
-    {
-        for (auto it = wrappers.rbegin(); it != wrappers.rend(); ++it)
-        {
-            llvm::Instruction* cloned = (*it)->clone();
-            cloned->setOperand(0, value);
-            builder->Insert(cloned);
-            value = VEXA_EXEC(cloned).l;
-        }
-
-        return value;
-    };
-
-    llvm::Value* true_val = materialize(select->getTrueValue());
-    llvm::Value* false_val = materialize(select->getFalseValue());
-
-    // opaque predicate solving in conditional moves
-    // disabled in vcfg recovery mode (EXPERIMENTAL!)
-    //
-    if (context->get_option(vexa::option::OPAQUE_SOLVING) && mode != mode_t::VCFG_RECOVERY)
-    {
-        bool result;
-        if (opaque_solver(cond_val.v, result))
-        {
-            builder->deleteLater(store);
-
-            if (result)
-            {
-                path_constraints.push_back(cond_val.v->as_expr_bool());
-                VEXA_EXEC(builder->CreateStore(true_val, store_ptr));
-            }
-            else
-            {
-                path_constraints.push_back(!cond_val.v->as_expr_bool());
-                VEXA_EXEC(builder->CreateStore(false_val, store_ptr));
-            }
-
-            return;
-        }
-    }
-
-    // path forking
-    vexa::cpu::snapshot base_snapshot = take_snapshot(PC, block);
-    llvm::BasicBlock* true_block = builder->basic_block();
-    llvm::BasicBlock* false_block = builder->basic_block();
-    builder->CreateCondBr(select->getCondition(), true_block, false_block);
-
-    // false path
-    builder->SetInsertPoint(false_block);
-    VEXA_EXEC(builder->CreateStore(false_val, store_ptr));
-    vexa::cpu::snapshot false_path = take_snapshot(inst.next_pc, false_block);
-    unexplored_paths.push(false_path);
-
-    // true path
-    restore_snapshot(base_snapshot);
-    builder->SetInsertPoint(true_block);
-    VEXA_EXEC(builder->CreateStore(true_val, store_ptr));
-
-    builder->deleteLater(store);
-    LOG_INFO(logger, "Path fork by CMOVxx");
-}
-
-vexa::dual_value vexa::cpu::get_condition(llvm::BasicBlock* BB)
-{
-    for (auto it = BB->rbegin(), end = BB->rend(); it != end; it++)
-    {
-        llvm::Instruction* I = &*it;
-        if (auto *store = llvm::dyn_cast<llvm::StoreInst>(I))
-        {
+    for (auto it = BB->rbegin(), end = BB->rend(); it != end; it++) {
+        llvm::Instruction *I = &*it;
+        if (auto *store = llvm::dyn_cast<llvm::StoreInst>(I)) {
             // does it store to the BRANCH_TAKEN alloca?
-            if (store->getPointerOperand() == branch_taken.l)
-            {
+            if (store->getPointerOperand() == branch_taken.l) {
                 // if yes, we return the value operand
-                vexa::dual_value val = VEXA_EXEC(builder->CreateTrunc(store->getValueOperand(), builder->getInt1Ty()));
+                vexa::dual_value val =
+                    VEXA_EXEC(builder->CreateTrunc(store->getValueOperand(), builder->getInt1Ty()));
                 return val;
             }
         }
@@ -679,16 +594,13 @@ vexa::dual_value vexa::cpu::get_condition(llvm::BasicBlock* BB)
     THROW("Couldn't get condition");
 }
 
-vexa::dual_value vexa::cpu::get_next_pc(llvm::BasicBlock* BB)
+vexa::dual_value vexa::cpu::get_next_pc(llvm::BasicBlock *BB)
 {
-    for (auto it = BB->rbegin(), end = BB->rend(); it != end; it++)
-    {
-        llvm::Instruction* I = &*it;
-        if (auto *store = llvm::dyn_cast<llvm::StoreInst>(I))
-        {
+    for (auto it = BB->rbegin(), end = BB->rend(); it != end; it++) {
+        llvm::Instruction *I = &*it;
+        if (auto *store = llvm::dyn_cast<llvm::StoreInst>(I)) {
             // does it store to the NEXT_PC alloca?
-            if (store->getPointerOperand() == next_pc.l)
-            {
+            if (store->getPointerOperand() == next_pc.l) {
                 // if yes, we return the value operand
                 auto *val = store->getValueOperand();
                 return VEXA_VAL(val);
@@ -699,40 +611,42 @@ vexa::dual_value vexa::cpu::get_next_pc(llvm::BasicBlock* BB)
     THROW("Couldn't get next pc");
 }
 
-vexa::dual_pointer vexa::cpu::get_page(vexa::value* value)
+vexa::dual_pointer vexa::cpu::get_page(vexa::value *value)
 {
-    vexa::value* v = value;
-    int64_t signed_addr = static_cast<int64_t>(v->as_uint64());
-    if ((signed_addr <= 0 && signed_addr >= -8192))
-    {
-        // stack access
+    int64_t addr = static_cast<int64_t>(value->as_uint64());
+
+    if (addr >= -4096 && addr < 4096)
         return stack_ptr;
-    }
-    else
-    {
-        return mem_ptr;
-    }
+
+    return mem_ptr;
 }
 
-vexa::dual_value vexa::cpu::value_to_pointer(llvm::Value* addr)
+vexa::value *vexa::cpu::calculate_pointer(vexa::value *addr)
+{
+    vexa::dual_pointer page = get_page(addr);
+    vexa::value *new_v = symex->value(*page.v + *addr);
+    vexa::pointer *new_p = symex->pointer(new_v, page.v->get_page());
+
+    return new_p;
+}
+
+vexa::dual_value vexa::cpu::value_to_pointer(llvm::Value *addr)
 {
     // save insert point
     builder->push_ip();
 
     // get value and simplify
     vexa::dual_value dv = VEXA_VAL(addr);
-    vexa::value* v = dv.v;
+    vexa::value *v = dv.v;
     v->simplify();
 
     vexa::dual_value ptr;
-    if (v->is_concrete())
-    {
+    if (v->is_concrete()) {
         vexa::dual_pointer page = get_page(dv.v);
         ptr = builder->inbounds_gep(builder->getInt8Ty(), page.l, addr);
     }
-    else
-    {
-        ptr = builder->inttoptr(addr, builder->getInt8Ty(), global_memory);
+    else {
+        ptr = builder->inttoptr(addr, builder->getPtrTy(), global_memory);
     }
 
 ret:
@@ -741,34 +655,27 @@ ret:
     return ptr;
 }
 
-bool vexa::cpu::opaque_solver(vexa::value* condition, bool &result)
+bool vexa::cpu::opaque_solver(vexa::value *condition, bool &result)
 {
     // basic opaque predicate detection
     condition->simplify();
-    if (condition->is_concrete())
-    {
+    if (condition->is_concrete()) {
         uint64_t is_taken = condition->as_uint64();
-        if (is_taken)
-        {
+        if (is_taken) {
             result = true;
             return true;
         }
-        else
-        {
+        else {
             result = false;
             return true;
         }
     }
 
-    // init solver
-    z3::context &c = *context->z3_context;
-    z3::solver solver(c);
-    z3::expr cond = condition->as_expr();
+    bw::Term cond = condition->as_expr_bool();
+    bw::Term not_cond = context->term_manager.mk_term(bw::Kind::NOT, {cond});
 
     // check if cond can be false
-    solver.add(cond != 1);
-    if (solver.check() == z3::unsat)
-    {
+    if (context->bitwuzla->check_sat({not_cond}) == bw::Result::UNSAT) {
         // means it cant be false
         // we solved this branch is always taken
         result = true;
@@ -776,10 +683,7 @@ bool vexa::cpu::opaque_solver(vexa::value* condition, bool &result)
     }
 
     // check if cond can be true
-    solver.reset();
-    solver.add(cond != 0);
-    if (solver.check() == z3::unsat)
-    {
+    if (context->bitwuzla->check_sat({cond}) == bw::Result::UNSAT) {
         // means it cant be true
         // we solved this branch is never taken
         result = false;
@@ -790,96 +694,64 @@ bool vexa::cpu::opaque_solver(vexa::value* condition, bool &result)
     return false;
 }
 
-vexa::value* vexa::cpu::stack_access(uint64_t offset)
+vexa::value *vexa::cpu::stack_access(uint64_t offset)
 {
-    vexa::value* sp = stack_ptr.v;
+    vexa::value *sp = stack_ptr.v;
     int64_t addr = static_cast<int64_t>(sp->as_uint64() + offset);
     auto page = vexa::to_ptr(stack_ptr.v)->get_page();
     return symex->pointer(addr, page);
 }
 
-bool vexa::cpu::is_ite(vexa::value* v)
+bool vexa::cpu::is_ite(vexa::value *v)
 {
-    z3::expr v_expr = v->as_expr();
-    if (v_expr.is_app() && v_expr.decl().decl_kind() == Z3_OP_ITE)
-        return true;
-    return false;
+    return v->as_expr().kind() == bw::Kind::ITE;
 }
 
-z3::expr normalize_ite(z3::expr e)
+bw::Term normalize_ite(bw::Term e, bw::TermManager &term_manager, bw::Bitwuzla &solver)
 {
-    z3::context& ctx = e.ctx();
-
-    auto normalize = [&](z3::expr parent_expr, z3::expr expr) -> z3::expr
-    {
-        if (!expr.is_app())
+    auto normalize = [&](const bw::Term &parent_expr, const bw::Term &expr) -> bw::Term {
+        if (expr.kind() != bw::Kind::ITE)
             return parent_expr;
 
-        if (expr.decl().decl_kind() == Z3_OP_ITE)
-        {
-            z3::expr cond = expr.arg(0);
-            z3::expr t = expr.arg(1);
-            z3::expr f = expr.arg(2);
-
-            z3::expr_vector from(ctx);
-            z3::expr_vector to(ctx);
-
-            from.push_back(expr);
-            to.push_back(t);
-            z3::expr new_true = parent_expr.substitute(from, to);
-
-            to.pop_back();
-            to.push_back(f);
-            z3::expr new_false = parent_expr.substitute(from, to);
-
-            z3::expr_vector args(ctx);
-            args.push_back(cond);
-            args.push_back(new_true);
-            args.push_back(new_false);
-            return z3::ite(cond, new_true, new_false);
-        }
-
-        return parent_expr;
+        bw::Term cond = expr[0];
+        bw::Term new_true = term_manager.substitute_term(parent_expr, {{expr, expr[1]}});
+        bw::Term new_false = term_manager.substitute_term(parent_expr, {{expr, expr[2]}});
+        return term_manager.mk_term(bw::Kind::ITE, {cond, new_true, new_false});
     };
 
-    for (unsigned int i = 0; i < e.num_args(); i++)
-    {
-        e = normalize(e, e.arg(i));
-    }
+    for (size_t i = 0; i < e.num_children(); i++)
+        e = normalize(e, e[i]);
 
-    return e.simplify();
+    return solver.simplify(e);
 }
 
-vexa::cpu::resolved_path_t vexa::cpu::resolve_ite(vexa::value* v)
+vexa::cpu::resolved_path_t vexa::cpu::resolve_ite(vexa::value *v)
 {
-    z3::expr v_expr = normalize_ite(v->simplify()->as_expr());
+    bw::Term v_expr =
+        normalize_ite(v->simplify()->as_expr(), context->term_manager, *context->bitwuzla);
 
-    if (v_expr.is_app() && v_expr.decl().decl_kind() == Z3_OP_ITE)
-    {
-        z3::expr cond = v_expr.arg(0);
-        z3::expr then_expr = v_expr.arg(1);
-        z3::expr else_expr = v_expr.arg(2);
+    if (v_expr.kind() == bw::Kind::ITE) {
+        bw::Term then_expr = v_expr[1];
+        bw::Term else_expr = v_expr[2];
 
-        if (then_expr.is_numeral() && else_expr.is_numeral())
+        if (then_expr.is_value() && else_expr.is_value())
             return vexa::cpu::resolved_path_t(
-                       then_expr.as_uint64(),
-                       else_expr.as_uint64());
+                vexa::value::as_uint64(then_expr), vexa::value::as_uint64(else_expr));
     }
-
-    LOG_DEBUG(logger,"{}", v_expr.to_string());
+    LOG_DEBUG(logger, "{}", v_expr.str());
     THROW("failed to resolve ite");
 }
 
 void vexa::cpu::replace_remill_intrinsics()
 {
-    auto replace_with_first_arg = [&](llvm::Function* F)
-    {
-        if (!F) return;
+    auto replace_with_first_arg = [&](llvm::Function *F) {
+        if (!F)
+            return;
 
-        for (auto *U : llvm::make_early_inc_range(F->users()))
-        {
+        for (auto *U : llvm::make_early_inc_range(F->users())) {
             auto *call = llvm::dyn_cast<llvm::CallInst>(U);
-            if (!call) continue;
+            if (!call)
+                continue;
 
             llvm::Value *first_arg = call->getArgOperand(0);
             call->replaceAllUsesWith(first_arg);
@@ -897,10 +769,9 @@ void vexa::cpu::replace_remill_intrinsics()
         "__remill_compare_ugt",
         "__remill_compare_uge",
         "__remill_compare_ult",
-        "__remill_compare_ule"
-    };
+        "__remill_compare_ule"};
 
-    for (const auto& func_name : extra_compares) {
+    for (const auto &func_name : extra_compares) {
         replace_with_first_arg(context->llvm_module->getFunction(func_name));
     }
 
@@ -909,16 +780,16 @@ void vexa::cpu::replace_remill_intrinsics()
     replace_with_first_arg(intrinsics->flag_computation_sign);
     replace_with_first_arg(intrinsics->flag_computation_overflow);
 
-    auto replace_with_undefined = [&](llvm::Function* F, size_t size)
-    {
-        if (!F) return;
+    auto replace_with_undefined = [&](llvm::Function *F, size_t size) {
+        if (!F)
+            return;
 
-        for (auto *U : llvm::make_early_inc_range(F->users()))
-        {
+        for (auto *U : llvm::make_early_inc_range(F->users())) {
             auto *call = llvm::dyn_cast<llvm::CallInst>(U);
-            if (!call) continue;
+            if (!call)
+                continue;
 
-            llvm::Value* undef = llvm::UndefValue::get(builder->getIntNTy(size));
+            llvm::Value *undef = llvm::UndefValue::get(builder->getIntNTy(size));
             symex->set(undef, symex->symbolic("undefined_" + std::to_string(size), size));
 
             call->replaceAllUsesWith(undef);

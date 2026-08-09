@@ -1,87 +1,134 @@
 #pragma once
 #include "global.hpp"
+#include <bitwuzla/cpp/bitwuzla.h>
+#include <llvm/IR/Value.h>
+#include <memory>
+#include <string>
+#include <vector>
 
-namespace vexa {
-template <typename To, typename From>
-To* dyn_cast(From *Val) {
-    return To::classof(Val) ? static_cast<To*>(Val) : nullptr;
+namespace bw = bitwuzla;
+
+namespace vexa
+{
+template <typename To, typename From> To *dyn_cast(From *Val)
+{
+    return To::classof(Val) ? static_cast<To *>(Val) : nullptr;
 }
 
 struct mem_page;
 class symex;
 class value
 {
-public:
+  public:
     enum struct kind
     {
         value,
         pointer
     };
-    
-    value() : _kind(kind::value) {}
-    value(kind k) : _kind(k) {}
-    value(z3::expr e) : _kind(kind::value), expr(e) {}
-    value(z3::expr e, kind k) : _kind(k), expr(e) {}
 
-    std::vector<z3::expr> possible_values(std::vector<z3::expr> constraints);
-    value* simplify();
-    z3::expr as_expr() const;
-    z3::expr as_expr_bool() const;
-    uint64_t as_uint64() const; 
+    value() : _kind(kind::value), term_manager(nullptr), solver(nullptr) {}
+    value(kind k) : _kind(k), term_manager(nullptr), solver(nullptr) {}
+    value(bw::Term e, bw::TermManager &tm, bw::Bitwuzla &bzla)
+        : _kind(kind::value), term(std::move(e)), term_manager(&tm), solver(&bzla)
+    {}
+
+    std::vector<bw::Term> possible_values(const std::vector<bw::Term> &constraints);
+    value *simplify();
+    bw::Term as_expr() const;
+    bw::Term as_expr_bool() const;
+    bw::Term operator+(const value &rhs) const;
+    bw::Term operator-(const value &rhs) const;
+    bw::Term operator*(const value &rhs) const;
+    bw::Term operator/(const value &rhs) const;
+    bw::Term operator%(const value &rhs) const;
+    bw::Term operator&(const value &rhs) const;
+    bw::Term operator|(const value &rhs) const;
+    bw::Term operator^(const value &rhs) const;
+    bw::Term operator<<(const value &rhs) const;
+    bw::Term operator>>(const value &rhs) const;
+    bw::Term operator-() const;
+    bw::Term operator~() const;
+    bw::Term operator==(const value &rhs) const;
+    bw::Term operator!() const;
+    bw::Term operator!=(const value &rhs) const;
+    bw::Term operator<(const value &rhs) const;
+    bw::Term operator<=(const value &rhs) const;
+    bw::Term operator>(const value &rhs) const;
+    bw::Term operator>=(const value &rhs) const;
+    bw::Term udiv(const value &rhs) const;
+    bw::Term urem(const value &rhs) const;
+    bw::Term lshr(const value &rhs) const;
+    bw::Term ult(const value &rhs) const;
+    bw::Term ule(const value &rhs) const;
+    bw::Term ugt(const value &rhs) const;
+    bw::Term uge(const value &rhs) const;
+    bw::Term concat(const value &rhs) const;
+    bw::Term extract(uint64_t high, uint64_t low) const;
+    bw::Term zext(uint64_t amount) const;
+    bw::Term sext(uint64_t amount) const;
+    bw::Term ite(const value &then_value, const value &else_value) const;
+    uint64_t as_uint64() const;
+    static uint64_t as_uint64(const bw::Term &term);
     uint64_t size() const;
     bool is_symbolic() const;
     bool is_concrete() const;
     std::string name() const;
-    kind get_kind() const {
-        return _kind;
-    }
+    kind get_kind() const { return _kind; }
 
     virtual ~value() = default;
-private:
+
+  protected:
+    value(const value &other, kind k)
+        : _kind(k), term(other.term), term_manager(other.term_manager), solver(other.solver)
+    {}
+
+  private:
+    bw::Term unary(bw::Kind op) const;
+    bw::Term binary(bw::Kind op, const value &rhs) const;
     const kind _kind;
-    std::optional<z3::expr> expr;
+    bw::Term term;
+    bw::TermManager *term_manager;
+    bw::Bitwuzla *solver;
 };
 
 class pointer : public value
 {
-public:
+  public:
     pointer() : value(kind::pointer) {}
-    pointer(const vexa::value& v, std::shared_ptr<mem_page> p)
-        : value(v.as_expr(), kind::pointer), page(std::move(p)) {}
+    pointer(const vexa::value &v, std::shared_ptr<mem_page> p)
+        : value(v, kind::pointer), page(std::move(p))
+    {}
 
-    static bool classof(const value* v) {
-        return v->get_kind() == kind::pointer;
-    }
+    static bool classof(const value *v) { return v->get_kind() == kind::pointer; }
     std::shared_ptr<mem_page> get_page() { return page; }
-private:
+
+  private:
     std::shared_ptr<mem_page> page;
 };
 
-template <typename From>
-vexa::pointer* to_ptr(From* Val) {
+template <typename From> vexa::pointer *to_ptr(From *Val)
+{
     return vexa::dyn_cast<vexa::pointer>(Val);
 }
 
 // a wrapper class holds both llvm pointer and it's symbolic expression
 class dual_pointer
 {
-public:
+  public:
     dual_pointer() {}
-    dual_pointer(llvm::Value* _l, vexa::pointer* _v) : l(_l), v(_v) {}
-    llvm::Value* l;
-    vexa::pointer* v;
+    dual_pointer(llvm::Value *_l, vexa::pointer *_v) : l(_l), v(_v) {}
+    llvm::Value *l;
+    vexa::pointer *v;
 };
 
 class dual_value
 {
-public:
+  public:
     dual_value() {}
-    dual_value(llvm::Value* _l, vexa::value* _v) : l(_l), v(_v) {}
-    dual_pointer to_ptr() {
-        return {l, vexa::to_ptr(v)};
-    }
+    dual_value(llvm::Value *_l, vexa::value *_v) : l(_l), v(_v) {}
+    dual_pointer to_ptr() { return {l, vexa::to_ptr(v)}; }
 
-    llvm::Value* l;
-    vexa::value* v;
+    llvm::Value *l;
+    vexa::value *v;
 };
-}
+} // namespace vexa

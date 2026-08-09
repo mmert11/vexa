@@ -9,7 +9,7 @@
 **VEXA** is an x86-64 targeted symbolic execution and lifting framework built on LLVM. It mainly focuses on lifting single functions that obfuscated or virtualized, optimizing/deobfuscating and recompiling them back into the binary.
 
 - Lifts the machine code to the LLVM IR using ***remill***
-- Emulates the lifted IR code using ***Z3***
+- Emulates the lifted IR code using ***Bitwuzla***
 - Applies binary patches and modifications using ***LIEF***
 
 ***This is just a hobby project and maintained only by me! I dont promise it will deobf/devirt any kind of commercial protection.*** 

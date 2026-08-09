@@ -3,15 +3,16 @@ function configure_vexa_consumer()
     add_includedirs(path.join(os.projectdir(), "include"))
     add_linkdirs("$(builddir)/$(os)/$(arch)/$(mode)")
 
-    add_packages("llvm", "z3", "lief", "quill")
+    add_packages("vexa", "llvm", "bitwuzla", "lief", "quill")
 
 	-- !!!!!!!!!!!!!!!!!!!!!!!!!!
     local remilldir = get_config("remill") or path.join(os.projectdir(), "..", "remill")
     add_includedirs(path.join(remilldir, "dependencies/install/include"))
     add_linkdirs(path.join(remilldir, "dependencies/install/lib"))
 
-    add_links("vexa", "z3")
     add_links(
+        "vexa",
+        "bitwuzla",
         "remill_arch",
         "remill_arch_x86",
         "remill_arch_aarch64",

@@ -1,21 +1,22 @@
 #include <vexa/vexa.h>
 
-#include <llvm/IR/InlineAsm.h>
-#include <llvm/MC/TargetRegistry.h>
-#include <llvm/Target/TargetMachine.h>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/TargetParser/Host.h>
-#include <llvm/TargetParser/Triple.h>
-#include <llvm/IR/LegacyPassManager.h>
-#include <llvm/InitializePasses.h>
-#include <llvm/PassRegistry.h>
 #include <llvm/Analysis/TargetLibraryInfo.h>
 #include <llvm/Analysis/TargetTransformInfo.h>
+#include <llvm/IR/InlineAsm.h>
+#include <llvm/IR/LegacyPassManager.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/InitializePasses.h>
+#include <llvm/MC/TargetRegistry.h>
+#include <llvm/PassRegistry.h>
+#include <llvm/Support/TargetSelect.h>
+#include <llvm/Target/TargetMachine.h>
+#include <llvm/TargetParser/Host.h>
+#include <llvm/TargetParser/Triple.h>
 
 #include <format>
 
-std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Function* func, bool optimize)
+std::vector<uint8_t>
+vexa::ir::builder::recompile(vexa::arch arch, llvm::Function *func, bool optimize)
 {
     LLVMInitializeX86TargetInfo();
     LLVMInitializeX86Target();
@@ -40,49 +41,53 @@ std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Functio
     if (arch == arch::x86_64)
         func->setCallingConv(llvm::CallingConv::X86_64_SysV);
 
-    llvm::Function* entry_func = create_function("vexa_entry", std::vector<llvm::Type*>());
+    llvm::Function *entry_func = create_function("vexa_entry", std::vector<llvm::Type *>());
     set_function(entry_func);
     add_attribute(llvm::Attribute::Naked);
 
-    llvm::BasicBlock* entry_bb = basic_block("entry");
+    llvm::BasicBlock *entry_bb = basic_block("entry");
     SetInsertPoint(entry_bb);
 
     auto cpu = context->cpu;
-    auto& DL = context->llvm_module->getDataLayout();
-    auto* struct_DL = DL.getStructLayout(cpu->arch->StateStructType());
+    auto &DL = context->llvm_module->getDataLayout();
+    auto *struct_DL = DL.getStructLayout(cpu->arch->StateStructType());
     uint64_t state_struct_size = struct_DL->getSizeInBytes().getFixedValue();
 
     // create a register mapping wrapper
-    std::string inlineasm =
-        ".intel_syntax noprefix\n"
-        "sub rsp, " + std::to_string(state_struct_size) + "\n";
+    std::string inlineasm = ".intel_syntax noprefix\n"
+                            "sub rsp, "
+                            + std::to_string(state_struct_size) + "\n";
 
     // prologue
     //
-    for (auto& reg : cpu->registers)
-    {
-        auto* r = reg.second;
-        if (!r->parent && r->name != "RIP" && !r->name.ends_with("BASE") && r->size == 8 && !r->name.starts_with("MM"))
+    for (auto &reg : cpu->registers) {
+        auto *r = reg.second;
+        if (!r->parent && r->name != "RIP" && !r->name.ends_with("BASE") && r->size == 8
+            && !r->name.starts_with("MM"))
         {
             std::string reg_lower_case = r->name;
-            std::transform(reg_lower_case.begin(), reg_lower_case.end(), reg_lower_case.begin(), [](unsigned char c) {
-                return std::tolower(c);
-            });
+            std::transform(
+                reg_lower_case.begin(),
+                reg_lower_case.end(),
+                reg_lower_case.begin(),
+                [](unsigned char c) {
+                    return std::tolower(c);
+                });
 
-            std::string s = std::format("mov qword ptr [rsp + {}], {}\n", r->offset, reg_lower_case);
+            std::string s =
+                std::format("mov qword ptr [rsp + {}], {}\n", r->offset, reg_lower_case);
             inlineasm.append(s);
         }
     }
-    std::string prologue_rsp_fix = std::format("add qword ptr [rsp + {}], {}\n", cpu->registers[amd64::SP]->offset, state_struct_size);
+    std::string prologue_rsp_fix = std::format(
+        "add qword ptr [rsp + {}], {}\n", cpu->registers[amd64::SP]->offset, state_struct_size);
     inlineasm.append(prologue_rsp_fix);
     inlineasm.append("mov rdi, rsp\n"); // STATE POINTER
     inlineasm.append("xor rsi, rsi\n"); // PROGRAM COUNTER
 
     // MEMORY POINTER
     vexa::global base = global_var(getInt8Ty(), "IMAGE_BASE");
-    inlineasm.append(
-        "lea rdx, [rip + " + base.name() + "]\n"
-    );
+    inlineasm.append("lea rdx, [rip + " + base.name() + "]\n");
 
     // function call
     //
@@ -90,17 +95,22 @@ std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Functio
 
     // epilogue
     //
-    for (auto& reg : cpu->registers)
-    {
-        auto* r = reg.second;
-        if (!r->parent && r->name != "RIP" && r->name != "RSP" && !r->name.ends_with("BASE") && r->size == 8 && !r->name.starts_with("MM"))
+    for (auto &reg : cpu->registers) {
+        auto *r = reg.second;
+        if (!r->parent && r->name != "RIP" && r->name != "RSP" && !r->name.ends_with("BASE")
+            && r->size == 8 && !r->name.starts_with("MM"))
         {
             std::string reg_lower_case = r->name;
-            std::transform(reg_lower_case.begin(), reg_lower_case.end(), reg_lower_case.begin(), [](unsigned char c) {
-                return std::tolower(c);
-            });
+            std::transform(
+                reg_lower_case.begin(),
+                reg_lower_case.end(),
+                reg_lower_case.begin(),
+                [](unsigned char c) {
+                    return std::tolower(c);
+                });
 
-            std::string s = std::format("mov {}, qword ptr [rsp + {}]\n", reg_lower_case, r->offset);
+            std::string s =
+                std::format("mov {}, qword ptr [rsp + {}]\n", reg_lower_case, r->offset);
             inlineasm.append(s);
         }
     }
@@ -113,16 +123,14 @@ std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Functio
     llvm::raw_svector_ostream dest(ObjBuffer);
 
     llvm::Triple T;
-    if (arch == vexa::arch::x86_64)
-    {
+    if (arch == vexa::arch::x86_64) {
         T.setArch(llvm::Triple::x86_64);
         T.setVendor(llvm::Triple::UnknownVendor);
         T.setOS(llvm::Triple::Linux);
         T.setEnvironment(llvm::Triple::GNU);
         T.setObjectFormat(llvm::Triple::ELF);
     }
-    else
-    {
+    else {
         THROW("unsupported arch!");
     }
     context->llvm_module->setTargetTriple(T);
@@ -133,13 +141,14 @@ std::vector<uint8_t> vexa::ir::builder::recompile(vexa::arch arch, llvm::Functio
 
     llvm::TargetOptions opt;
     llvm::Reloc::Model RM = llvm::Reloc::Model::Static;
-    std::unique_ptr<llvm::TargetMachine> TM(
-        Target->createTargetMachine(T, "generic", "", opt, RM, std::nullopt,
-                                    optimize
-                                    ? llvm::CodeGenOptLevel::Aggressive
-                                    : llvm::CodeGenOptLevel::None
-                                   )
-    );
+    std::unique_ptr<llvm::TargetMachine> TM(Target->createTargetMachine(
+        T,
+        "generic",
+        "",
+        opt,
+        RM,
+        std::nullopt,
+        optimize ? llvm::CodeGenOptLevel::Aggressive : llvm::CodeGenOptLevel::None));
     VEXA_ASSERT(TM);
     context->llvm_module->setDataLayout(TM->createDataLayout());
 

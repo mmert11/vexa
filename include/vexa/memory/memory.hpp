@@ -5,7 +5,8 @@
 
 #include <map>
 
-namespace vexa {
+namespace vexa
+{
 struct mem_page
 {
     mem_page(uint64_t size)
@@ -13,7 +14,7 @@ struct mem_page
         if (size > 0)
             concrete_memory.reserve(size);
     }
-    std::unordered_map<uint64_t, std::optional<z3::expr>> concrete_memory;
+    std::unordered_map<uint64_t, std::optional<bw::Term>> concrete_memory;
 };
 
 struct mem_state
@@ -23,23 +24,19 @@ struct mem_state
 
 class memory
 {
-public:
+  public:
     memory();
-    memory(vexa::context* _context);
+    memory(vexa::context *_context);
 
     std::shared_ptr<mem_page> allocate(uint64_t size = 0);
-    void write(vexa::pointer* addr, vexa::value* val);
-    vexa::value* read(vexa::pointer* addr, int size);
+    void write(vexa::pointer *addr, vexa::value *val);
+    vexa::value *read(vexa::pointer *addr, int size);
 
     mem_state take_snapshot();
     void restore_snapshot(mem_state ss);
 
-private:
-    vexa::context* context;
+  private:
+    vexa::context *context;
     std::vector<std::shared_ptr<mem_page>> pages;
-
-    void _write(vexa::pointer* addr, vexa::value* val);
-    vexa::value* _read(vexa::pointer* addr, int size);
-    std::pair<std::shared_ptr<z3::expr>, bool> get_if_written_before(z3::expr addr);
 };
-}
+} // namespace vexa

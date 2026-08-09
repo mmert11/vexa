@@ -1,7 +1,7 @@
-#include <vexa/vexa.h>
-#include <vexa/passes/loop_reroll.hpp>
 #include <llvm/ADT/PostOrderIterator.h>
 #include <llvm/Transforms/Utils/ValueMapper.h>
+#include <vexa/passes/loop_reroll.hpp>
+#include <vexa/vexa.h>
 
 // UNDER MAINTENANCE, DONT USE UNTIL ITS REWORKED !!
 
@@ -16,7 +16,7 @@
 // instruction
 struct instruction_t
 {
-    llvm::Instruction* value;
+    llvm::Instruction *value;
     size_t hash;
 
     bool operator==(const instruction_t &other)
@@ -25,7 +25,7 @@ struct instruction_t
     }
 };
 
-instruction_t hash_instruction(llvm::Instruction* I)
+instruction_t hash_instruction(llvm::Instruction *I)
 {
     size_t h = 0;
 
@@ -33,11 +33,12 @@ instruction_t hash_instruction(llvm::Instruction* I)
     h = llvm::hash_combine(h, I->getType());
 
     for (unsigned i = 0; i < I->getNumOperands(); ++i) {
-        llvm::Value* op = I->getOperand(i);
+        llvm::Value *op = I->getOperand(i);
 
-        if (auto* CI = llvm::dyn_cast<llvm::ConstantInt>(op)) {
+        if (auto *CI = llvm::dyn_cast<llvm::ConstantInt>(op)) {
             h = llvm::hash_combine(h, CI->getZExtValue());
-        } else {
+        }
+        else {
             h = llvm::hash_combine(h, 0xDEADC0DE);
         }
     }
@@ -48,8 +49,7 @@ instruction_t hash_instruction(llvm::Instruction* I)
 size_t hash_instructions(std::vector<instruction_t> instructions)
 {
     size_t hash = 0;
-    for (unsigned int i = 0; i < instructions.size(); i++)
-    {
+    for (unsigned int i = 0; i < instructions.size(); i++) {
         hash = llvm::hash_combine(hash, instructions[i].hash);
         hash = llvm::hash_combine(hash, i);
     }
@@ -68,10 +68,7 @@ struct dependency_t
 struct dataflow_t
 {
     std::vector<dependency_t> dependencies;
-    bool operator==(const dataflow_t &other) const
-    {
-        return dependencies == other.dependencies;
-    }
+    bool operator==(const dataflow_t &other) const { return dependencies == other.dependencies; }
 };
 
 struct block_t
@@ -91,7 +88,7 @@ size_t hash_dependency(dependency_t dependency)
 {
     size_t hash = 0;
 
-    if (auto* I = llvm::dyn_cast_or_null<llvm::Instruction>(dependency.access_instr))
+    if (auto *I = llvm::dyn_cast_or_null<llvm::Instruction>(dependency.access_instr))
         hash = llvm::hash_combine(hash, hash_instruction(I).hash);
 
     hash = llvm::hash_combine(hash, dependency.accessed_by_index);
@@ -107,29 +104,24 @@ dataflow_t dataflow_analysis(std::vector<instruction_t> block_1)
 {
     std::vector<dependency_t> dependencies;
 
-    for (auto it = block_1.begin(); it != block_1.end(); ++it)
-    {
-        for (auto &op : it->value->operands())
-        {
+    for (auto it = block_1.begin(); it != block_1.end(); ++it) {
+        for (auto &op : it->value->operands()) {
             // only non-constants
             if (llvm::isa<llvm::Constant>(op))
                 continue;
 
             bool found = false;
-            for (auto &it_ : block_1)
-            {
-                if (it_.value == op)
-                {
+            for (auto &it_ : block_1) {
+                if (it_.value == op) {
                     found = true;
                     break;
                 }
             }
 
-            if (!found)
-            {
+            if (!found) {
                 // !!!
                 bool already_added = false;
-                for (const auto& existing_dep : dependencies) {
+                for (const auto &existing_dep : dependencies) {
                     if (existing_dep.dependency == op) {
                         already_added = true;
                         break;
@@ -150,7 +142,7 @@ dataflow_t dataflow_analysis(std::vector<instruction_t> block_1)
 dataflow_t dependency_analysis(dataflow_t dataflow, std::vector<instruction_t> block)
 {
     auto dependencies = dataflow.dependencies;
-    std::erase_if(dependencies, [&](const dependency_t& dep) {
+    std::erase_if(dependencies, [&](const dependency_t &dep) {
         bool found_in_prev_block = false;
         for (auto &I : block) {
             if (I.value == dep.dependency) {
@@ -167,7 +159,7 @@ dataflow_t dependency_analysis(dataflow_t dataflow, std::vector<instruction_t> b
 dataflow_t phi_analysis(dataflow_t flow_1, dataflow_t flow_2)
 {
     auto dependencies = flow_1.dependencies;
-    std::erase_if(dependencies, [&](const dependency_t& dep) {
+    std::erase_if(dependencies, [&](const dependency_t &dep) {
         bool found_in_prev_block = false;
         for (auto &D : flow_2.dependencies) {
             if (D.accessed_by_index == dep.accessed_by_index) {
@@ -181,20 +173,19 @@ dataflow_t phi_analysis(dataflow_t flow_1, dataflow_t flow_2)
     return {dependencies};
 }
 
-bool vexa::passes::loop_reroll::run(llvm::Function* func)
+bool vexa::passes::loop_reroll::run(llvm::Function *func)
 {
     llvm::FunctionCallee MarkerFunc = context->MarkerFunc;
 
-    for (auto &BB : *func)
-    {
-        for (auto it = BB.rbegin(), end = BB.rend(); it != end; ++it)
-        {
+    for (auto &BB : *func) {
+        for (auto it = BB.rbegin(), end = BB.rend(); it != end; ++it) {
             llvm::Instruction &I = *it;
             if (I.isTerminator() || it == BB.rbegin() || it == BB.rend())
                 continue;
 
-            llvm::CallInst* call_inst = llvm::dyn_cast<llvm::CallInst>(&I);
-            // try to find the unrolled loop marker function call, this saves us from pattern scanning the whole code
+            llvm::CallInst *call_inst = llvm::dyn_cast<llvm::CallInst>(&I);
+            // try to find the unrolled loop marker function call, this saves us from pattern
+            // scanning the whole code
             if (!call_inst || call_inst->getCalledFunction() != MarkerFunc.getCallee())
                 continue;
 
@@ -202,7 +193,8 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
                 if (C->getCalledFunction() == MarkerFunc.getCallee())
                     continue;
 
-            // we have found a marker, means there is an unrolled loop here, lets search for it's pattern
+            // we have found a marker, means there is an unrolled loop here, lets search for it's
+            // pattern
             unrolled_loop_t loop;
             dataflow_t dataflow;
 
@@ -210,8 +202,7 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
             search_for.push_back(hash_instruction(call_inst));
 
             // now look for similar patterns recursively in next instructions in the basic block
-            for (auto it_ = std::next(it); it_ != end;)
-            {
+            for (auto it_ = std::next(it); it_ != end;) {
                 size_t search_hash = hash_instructions(search_for);
                 std::vector<instruction_t> instructions;
 
@@ -222,8 +213,7 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
 
                 // gather the next sequence of instructions
                 auto it__ = it_;
-                for (unsigned int i = 0; i < search_for.size(); i++)
-                {
+                for (unsigned int i = 0; i < search_for.size(); i++) {
                     if (it__ == end)
                         break;
 
@@ -236,9 +226,9 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
                 dataflow = dataflow_analysis(search_for);
                 dataflow_t inst_dataflow = dataflow_analysis(instructions);
 
-                // does it match with the pattern we look for? (heuristic detection improved with dataflow analysis)
-                if (search_hash == hash && dataflow == inst_dataflow)
-                {
+                // does it match with the pattern we look for? (heuristic detection improved with
+                // dataflow analysis)
+                if (search_hash == hash && dataflow == inst_dataflow) {
                     if (loop.blocks.empty())
                         loop.blocks.push_back({search_for, dataflow});
 
@@ -247,10 +237,8 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
                     std::advance(it_, instructions.size()); // !!!
                     loop.blocks.push_back({instructions, inst_dataflow});
                 }
-                else
-                {
-                    if (loop.iteration_count > 3)
-                    {
+                else {
+                    if (loop.iteration_count > 3) {
                         // we already found a loop, but pattern doesnt match anymore
                         // means we came to the entry of the unrolled loop (first iteration)
                         // first iteration is structurly different from loop body usually
@@ -258,17 +246,18 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
 
                         for (uint32_t i = 0; i < instructions.size(); i++)
                             if (instructions[i].hash != search_for[i].hash)
-                                instructions.erase(std::next(instructions.begin(), i), instructions.end());
+                                instructions.erase(
+                                    std::next(instructions.begin(), i), instructions.end());
 
                         loop.entry = instructions;
 
                         // increase the iterator by the loop size
-                        size_t skip_amount = (loop.body.size() * (loop.iteration_count - 1)) + loop.entry.size();
+                        size_t skip_amount =
+                            (loop.body.size() * (loop.iteration_count - 1)) + loop.entry.size();
                         std::advance(it, skip_amount - 1);
                         break;
                     }
-                    else
-                    {
+                    else {
                         // couldnt find a loop, extend the pattern
                         search_for.push_back(hash_instruction(&*it_));
                         it_++;
@@ -277,41 +266,45 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
             }
 
             // we have found a loop that can be re-rolled
-            if (loop.iteration_count > 3)
-            {
-                dataflow_t dependency_flow = dependency_analysis(loop.blocks[loop.blocks.size() - 2].dataflow, loop.blocks.back().instructions);
+            if (loop.iteration_count > 3) {
+                dataflow_t dependency_flow = dependency_analysis(
+                    loop.blocks[loop.blocks.size() - 2].dataflow, loop.blocks.back().instructions);
                 dataflow_t dataflow_of_last_block = loop.blocks.back().dataflow;
                 dataflow_t phi_s = phi_analysis(dataflow_of_last_block, dependency_flow);
 
-                llvm::Instruction* first_inst_of_body = loop.blocks.back().instructions.back().value;
-                llvm::BasicBlock* pre_header = first_inst_of_body->getParent();
-                llvm::BasicBlock* unrolled_loop_body = pre_header->splitBasicBlock(first_inst_of_body->getIterator());
-                llvm::BasicBlock* loop_exit = unrolled_loop_body->splitBasicBlock(loop.blocks.front().instructions.front().value->getIterator(), "loop.exit");
+                llvm::Instruction *first_inst_of_body =
+                    loop.blocks.back().instructions.back().value;
+                llvm::BasicBlock *pre_header = first_inst_of_body->getParent();
+                llvm::BasicBlock *unrolled_loop_body =
+                    pre_header->splitBasicBlock(first_inst_of_body->getIterator());
+                llvm::BasicBlock *loop_exit = unrolled_loop_body->splitBasicBlock(
+                    loop.blocks.front().instructions.front().value->getIterator(), "loop.exit");
 
                 // insert new loop header
-                llvm::BasicBlock* loop_header = builder->basic_block("loop.header");
+                llvm::BasicBlock *loop_header = builder->basic_block("loop.header");
                 pre_header->getTerminator()->eraseFromParent();
                 builder->SetInsertPoint(pre_header);
                 builder->CreateBr(loop_header);
 
                 // create the loop body, will fill it later
-                llvm::BasicBlock* loop_body = builder->basic_block("loop.body");
+                llvm::BasicBlock *loop_body = builder->basic_block("loop.body");
                 llvm::ValueToValueMapTy VMap;
 
                 // move loop_exit to after loop_body
                 loop_exit->moveAfter(loop_body);
 
                 // fill the new loop header
-                std::map<llvm::Value*, llvm::PHINode*> backedge_map;
+                std::map<llvm::Value *, llvm::PHINode *> backedge_map;
                 builder->SetInsertPoint(loop_header);
-                for (auto &D : phi_s.dependencies)
-                {
-                    llvm::PHINode* phi = builder->CreatePHI(D.dependency->getType(), 2, "phi_" + D.dependency->getName().str());
+                for (auto &D : phi_s.dependencies) {
+                    llvm::PHINode *phi = builder->CreatePHI(
+                        D.dependency->getType(), 2, "phi_" + D.dependency->getName().str());
                     phi->addIncoming(D.dependency, pre_header);
                     VMap[D.dependency] = phi;
                     backedge_map[D.access_instr] = phi;
                 }
-                llvm::PHINode* counter = builder->CreatePHI(builder->getInt64Ty(), 2, "loop.counter");
+                llvm::PHINode *counter =
+                    builder->CreatePHI(builder->getInt64Ty(), 2, "loop.counter");
                 builder->CreateBr(loop_body);
 
                 std::vector<instruction_t> back_original = loop.blocks.back().instructions;
@@ -323,11 +316,11 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
                 // create the loop body, replace the dependencies with new phi nodes, using VMap
                 builder->SetInsertPoint(loop_body);
                 // copy the old body (first iteration in the loop)
-                for (auto &I : loop.blocks.back().instructions)
-                {
-                    if (!I.value) continue;
+                for (auto &I : loop.blocks.back().instructions) {
+                    if (!I.value)
+                        continue;
                     // dont copy the marker function
-                    if (llvm::CallInst* C = llvm::dyn_cast<llvm::CallInst>(I.value))
+                    if (llvm::CallInst *C = llvm::dyn_cast<llvm::CallInst>(I.value))
                         if (C->getCalledFunction() == MarkerFunc.getCallee())
                             continue;
 
@@ -342,12 +335,14 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
                 }
 
                 // create the counter
-                llvm::Value* next_counter = builder->CreateAdd(counter, builder->getInt64(1), "next.counter");
+                llvm::Value *next_counter =
+                    builder->CreateAdd(counter, builder->getInt64(1), "next.counter");
                 counter->addIncoming(builder->getInt64(0), pre_header);
                 counter->addIncoming(next_counter, loop_body);
 
                 // create the loop condition
-                llvm::Value* cond = builder->CreateICmpSLT(next_counter, builder->getInt64(loop.iteration_count));
+                llvm::Value *cond =
+                    builder->CreateICmpSLT(next_counter, builder->getInt64(loop.iteration_count));
                 builder->CreateCondBr(cond, loop_header, loop_exit);
 
                 // thanks to claude for below
@@ -355,18 +350,19 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
                 //   structural_exit_map — maps every loop instruction at position j to
                 //                         VMap[back_original[j]], its re-rolled equivalent.
                 //                         Used to fix up post-loop uses before erasing.
-                llvm::SmallPtrSet<llvm::Value*, 32> all_loop_values;
-                std::map<llvm::Value*, llvm::Value*> structural_exit_map;
+                llvm::SmallPtrSet<llvm::Value *, 32> all_loop_values;
+                std::map<llvm::Value *, llvm::Value *> structural_exit_map;
 
                 for (auto &B : loop.blocks) {
                     for (size_t j = 0; j < B.instructions.size(); j++) {
-                        llvm::Value* val = B.instructions[j].value;
-                        if (!val) continue;
+                        llvm::Value *val = B.instructions[j].value;
+                        if (!val)
+                            continue;
 
                         all_loop_values.insert(val);
 
                         if (j < back_original.size()) {
-                            llvm::Value* canonical = back_original[j].value;
+                            llvm::Value *canonical = back_original[j].value;
                             if (canonical && VMap.count(canonical))
                                 structural_exit_map[val] = VMap[canonical];
                         }
@@ -375,8 +371,9 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
 
                 // Erase old unrolled loop instructions.
                 // For each instruction, before killing it:
-                //   redirect any post-loop uses to the re-rolled equivalent via structural_exit_map,
-                //   then wipe remaining (intra-loop) uses with undef and erase.
+                //   redirect any post-loop uses to the re-rolled equivalent via
+                //   structural_exit_map, then wipe remaining (intra-loop) uses with undef and
+                //   erase.
                 for (auto &B : loop.blocks) {
                     for (auto &LI : B.instructions) {
                         if (!LI.value || !LI.value->getParent())
@@ -384,10 +381,12 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
 
                         auto it_map = structural_exit_map.find(LI.value);
                         if (it_map != structural_exit_map.end()) {
-                            llvm::Value* rerolled = it_map->second;
-                            for (auto UI = LI.value->use_begin(), UE = LI.value->use_end(); UI != UE;) {
+                            llvm::Value *rerolled = it_map->second;
+                            for (auto UI = LI.value->use_begin(), UE = LI.value->use_end();
+                                 UI != UE;)
+                            {
                                 llvm::Use &use = *UI++;
-                                auto* user_inst = llvm::dyn_cast<llvm::Instruction>(use.getUser());
+                                auto *user_inst = llvm::dyn_cast<llvm::Instruction>(use.getUser());
                                 if (user_inst && !all_loop_values.count(user_inst))
                                     use.set(rerolled);
                             }
@@ -398,7 +397,8 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
                     }
                 }
 
-                LOG_INFO(logger, "Loop detected and re-rolled, iteration {}", loop.iteration_count + 1);
+                LOG_INFO(
+                    logger, "Loop detected and re-rolled, iteration {}", loop.iteration_count + 1);
                 // we have re-rolled a loop
                 return true;
             }
@@ -408,7 +408,7 @@ bool vexa::passes::loop_reroll::run(llvm::Function* func)
     // remove the any markers left in the function
     for (auto &BB : *builder->get_function())
         for (auto &I : llvm::make_early_inc_range(BB))
-            if (llvm::CallInst* C = llvm::dyn_cast<llvm::CallInst>(&I))
+            if (llvm::CallInst *C = llvm::dyn_cast<llvm::CallInst>(&I))
                 if (C->getCalledFunction() == MarkerFunc.getCallee())
                     C->eraseFromParent();
 

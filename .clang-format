@@ -1,0 +1,58 @@
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+
+# 1. Girinti (Indent) Genişliği
+# 2 boşluk yerine 4 boşluk kullanarak iç içe yapıları daha belirgin yapıyoruz.
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+
+# 2. Satır Uzunluğu ve Sarmalama (Column Limit)
+# Satırları 80 karaktere zorlamak yerine 100 veya 120 vererek
+# gereksiz kırılmaları ve sıkışıklığı önlüyoruz.
+ColumnLimit: 100
+
+# 3. Süslü Parantez Kuralları (Brace Wrapping)
+# Fonksiyonlarda, sınıflarda ve kontrol bloklarında parantezleri alt satıra alarak
+# kodu dikeyde nefes almaya zorlarız.
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterControlStatement: MultiLine # Sadece çok satırlı if/for bloklarında alt satıra geçer
+  AfterEnum: true
+  AfterFunction: true
+  AfterClass: true
+  AfterNamespace: true
+  AfterStruct: true
+  BeforeElse: true
+  SplitEmptyFunction: false
+
+# 4. Parametre ve Argüman Hizalamaları
+# Fonksiyon parametrelerini ve çağrılarını tek satıra sıkıştırmak yerine
+# sığmadığında hepsini ayrı satıra böler.
+AllowAllParametersOfDeclarationOnNextLine: false
+AlignAfterOpenBracket: AlwaysBreak # Parametreler aç parantezin hemen altına dizilmek yerine alt satırdan başlar
+BinPackParameters: false           # Her parametreyi kendi satırına alır (Sıkışıklığı çözen anahtar!)
+BinPackArguments: false            # Çağrılardaki her argümanı kendi satırına alır
+
+# 5. Başlatıcı Listeleri (Initializer Lists & Designated Initializers)
+# struct concrete_memory_access{ .address = ... } gibi yapıların iç içe sıkışmasını engeller.
+AllowAllConstructorInitializersOnNextLine: false
+ConstructorInitializerAllOnOneLineOrOnePerLine: true
+PackConstructorInitializers: NextLine
+
+# 6. Lambda ve Sınıflandırıcılar
+# Lambda gövdelerini tek satıra sıkıştırmayı kapatır.
+AllowShortLambdasOnASingleLine: None
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+
+# 7. Operatör ve İfade Kırılmaları
+# Çok uzun if koşullarını ve operatör zincirlerini operatörden önce kırar.
+BreakBeforeBinaryOperators: NonAssignment
+
+# 9. Dikey Boşluklar (Nefes Alma)
+# Kod aralarındaki boş satırları korur.
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false

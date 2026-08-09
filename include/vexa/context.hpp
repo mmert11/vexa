@@ -1,13 +1,13 @@
 #pragma once
 #include <list>
 #include <map>
-#include <unordered_map>
-#include <string>
 #include <stack>
+#include <string>
+#include <unordered_map>
 
+#include <bitwuzla/cpp/bitwuzla.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
-#include <z3++.h>
 
 #include "value/value.hpp"
 
@@ -28,7 +28,8 @@ enum class os
     windows
 };
 
-namespace ir {
+namespace ir
+{
 class builder;
 }
 
@@ -73,7 +74,7 @@ enum class option
     // Simplifies expressions and propagates constants.
     // 0: disabled,
     // 1: enabled
-    Z3_CONSTANT_PROPAGATION,
+    CONSTANT_PROPAGATION,
 
     // Tries to re-roll unrolled loops.
     // 0: disabled,
@@ -106,10 +107,10 @@ enum cfg_join_policy_t : int
     SPECIALIZE_BY_PATH
 };
 
-using event_callback_t = std::function<void(vexa::engine&)>;
+using event_callback_t = std::function<void(vexa::engine &)>;
 class context
 {
-public:
+  public:
     context(std::shared_ptr<vexa::engine> engine, vexa::arch _arch);
     std::shared_ptr<vexa::engine> engine;
     std::shared_ptr<vexa::cpu> cpu;
@@ -119,7 +120,9 @@ public:
 
     std::unique_ptr<llvm::LLVMContext> llvm_context;
     std::unique_ptr<llvm::Module> llvm_module;
-    std::shared_ptr<z3::context> z3_context;
+    bw::TermManager term_manager;
+    bw::Options bitwuzla_options;
+    std::unique_ptr<bw::Bitwuzla> bitwuzla;
     llvm::FunctionCallee MarkerFunc;
 
     // options
@@ -130,12 +133,11 @@ public:
         {option::OPAQUE_SOLVING, 1},
         {option::MODE, 0},
         {option::STATE_CLEANUP, 1},
-        {option::Z3_CONSTANT_PROPAGATION, 1},
+        {option::CONSTANT_PROPAGATION, 1},
         {option::LOOP_REROLL, 1},
-        {option::CFG_JOIN_POLICY, 0}
-    };
+        {option::CFG_JOIN_POLICY, 0}};
 
     void event_handler(vexa::event_kind event_k);
     std::unordered_map<vexa::event_kind, event_callback_t> event_callbacks;
 };
-}
+} // namespace vexa

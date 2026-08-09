@@ -1,10 +1,10 @@
 #pragma once
-#include "../context.hpp"
-#include "../symex/symex.hpp"
-#include "../ir/builder.hpp"
 #include "../arch/amd64.hpp"
-#include "../memory/memory.hpp"
 #include "../binary/binary.hpp"
+#include "../context.hpp"
+#include "../ir/builder.hpp"
+#include "../memory/memory.hpp"
+#include "../symex/symex.hpp"
 
 #include <quill/LogMacros.h>
 #include <quill/SimpleSetup.h>
@@ -13,9 +13,9 @@ namespace vexa
 {
 class engine
 {
-public:
+  public:
     engine(vexa::arch arch = vexa::arch::x86_64);
-    vexa::context* get_context();
+    vexa::context *get_context();
     std::shared_ptr<vexa::ir::builder> get_builder();
     std::shared_ptr<vexa::memory> get_memory();
     std::shared_ptr<vexa::symex> get_symex();
@@ -31,7 +31,7 @@ public:
 
     // map binary to memory.
     // supports elf & pe.
-    void map_binary(vexa::binary& binary);
+    void map_binary(vexa::binary &binary);
 
     // event callbacks
     void set_callback(vexa::event_kind kind, vexa::event_callback_t callback);
@@ -41,17 +41,17 @@ public:
     void print();
     void reset();
 
-
     // recompiles the lifted module
     std::vector<uint8_t> recompile(bool optimize = true);
     // patches the binary at given rva
     // and relocates the symbols
-    void patch(vexa::binary& binary, std::vector<uint8_t> object_file, uint64_t va);
+    void patch(vexa::binary &binary, std::vector<uint8_t> object_file, uint64_t va);
 
     std::string ir;
-private:
+
+  private:
     vexa::arch _arch;
-    vexa::context* context;
+    vexa::context *context;
     std::shared_ptr<vexa::ir::builder> builder;
     std::shared_ptr<vexa::memory> memory;
     std::shared_ptr<vexa::cpu> cpu;
@@ -60,8 +60,12 @@ private:
     std::chrono::milliseconds time;
     int instr_count;
 
-    std::vector<uint8_t> fix_relocations(vexa::binary &object_file, std::vector<uint8_t> code_content,
-                                         uint64_t new_section_rva, uint64_t image_base, uint64_t shift_offset = 0);
-    std::vector<uint8_t> read_binary_file(const std::string& filename);
+    std::vector<uint8_t> fix_relocations(
+        vexa::binary &object_file,
+        std::vector<uint8_t> code_content,
+        uint64_t new_section_rva,
+        uint64_t image_base,
+        uint64_t shift_offset = 0);
+    std::vector<uint8_t> read_binary_file(const std::string &filename);
 };
-}
+} // namespace vexa
