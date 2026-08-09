@@ -15,12 +15,14 @@ vexa::cpu::cpu(vexa::context *_context)
 
 vexa::cpu::snapshot vexa::cpu::take_snapshot(uint64_t pc, llvm::BasicBlock *bb)
 {
-    return vexa::cpu::snapshot{memory->take_snapshot(), pc, VPC, bb, VJMP, PATH, path_constraints};
+    return vexa::cpu::snapshot{
+        memory->take_snapshot(), symex->take_snapshot(), pc, VPC, bb, VJMP, PATH, path_constraints};
 }
 
 void vexa::cpu::restore_snapshot(vexa::cpu::snapshot ss)
 {
     memory->restore_snapshot(ss.mem_ss);
+    symex->restore_snapshot(std::move(ss.symex_ss));
     builder->SetInsertPoint(ss.bb);
     PC = ss.pc;
     VPC = ss.vpc;
@@ -413,7 +415,7 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
 
         // THROW("Unresolved jump");
     }
-    else if (inst.function.starts_with("CMOV") && false)
+    else if (inst.function.starts_with("CMOV") && true)
         handle_conditional_moves(inst, block);
 
     PC = inst.next_pc;

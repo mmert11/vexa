@@ -7,6 +7,7 @@
 
 #include "../ir/builder.hpp"
 #include "../memory/memory.hpp"
+#include "../symex/symex.hpp"
 
 #include <llvm/IR/InstVisitor.h>
 #include <remill/Arch/Arch.h>
@@ -59,12 +60,20 @@ class cpu
         vexa::value *visitExtractElementInst(llvm::ExtractElementInst &I);
 
       private:
-        void write_memory_intrinsic(llvm::CallInst &intrinsic_call, size_t size);
-        void read_memory_intrinsic(llvm::CallInst &intrinsic_call, size_t size);
+        llvm::BasicBlock *write_memory_intrinsic(llvm::CallInst &intrinsic_call, size_t size);
+        llvm::BasicBlock *read_memory_intrinsic(llvm::CallInst &intrinsic_call, size_t size);
+        llvm::BasicBlock *fork_memory_access(
+            llvm::CallInst &call,
+            vexa::value *address,
+            size_t size,
+            bool write,
+            const std::vector<bw::Term> &values);
         void write_memory(vexa::pointer *addr, vexa::value *val);
         vexa::value *read_memory(vexa::pointer *addr, int size);
-        vexa::value *
-        handle_llvm_intrinsics(llvm::CallInst &I, llvm::Function *callee, llvm::Intrinsic::ID id);
+        vexa::value *handle_llvm_intrinsics(
+            llvm::CallInst &I,
+            llvm::Function *callee,
+            llvm::Intrinsic::ID id);
 
         vexa::context *context;
         vexa::cpu *cpu;
@@ -72,6 +81,7 @@ class cpu
         std::shared_ptr<vexa::symex> symex;
         std::shared_ptr<vexa::memory> memory;
         llvm::DataLayout DL;
+        llvm::BasicBlock *forked_block = nullptr;
     };
 
     struct resolved_path_t
@@ -85,6 +95,7 @@ class cpu
     struct snapshot
     {
         mem_state mem_ss;
+        symex_state symex_ss;
         uint64_t pc, vpc;
         llvm::BasicBlock *bb;
         bool vjmp;

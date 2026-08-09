@@ -26,16 +26,16 @@ entry:
   %12 = load i64, ptr %R151255, align 8
   %DF1298 = getelementptr inbounds nuw i8, ptr %state, i64 2075
   %13 = load i8, ptr %DF1298, align 1
-  %stack9564 = alloca [8192 x i8], align 1
-  %stack_ptr = getelementptr inbounds nuw i8, ptr %stack9564, i64 4096
-  %14 = getelementptr inbounds nuw i8, ptr %stack9564, i64 4088
+  %stack9616 = alloca [8192 x i8], align 1
+  %stack_ptr = getelementptr inbounds nuw i8, ptr %stack9616, i64 4096
+  %14 = getelementptr inbounds nuw i8, ptr %stack9616, i64 4088
   store i64 0, ptr %14, align 8
-  %15 = getelementptr inbounds nuw i8, ptr %stack9564, i64 4080
+  %15 = getelementptr inbounds nuw i8, ptr %stack9616, i64 4080
   store i64 %8, ptr %15, align 8
-  %16 = getelementptr inbounds nuw i8, ptr %stack9564, i64 4072
+  %16 = getelementptr inbounds nuw i8, ptr %stack9616, i64 4072
   store i64 %7, ptr %16, align 8
-  %17 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3560
-  %18 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3552
+  %17 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3560
+  %18 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3552
   %19 = getelementptr inbounds nuw i8, ptr %memory, i64 61464
   store i64 8553, ptr %19, align 8
   %20 = getelementptr inbounds nuw i8, ptr %memory, i64 59392
@@ -95,33 +95,33 @@ entry:
   %47 = getelementptr inbounds nuw i8, ptr %memory, i64 61680
   store i64 57077, ptr %47, align 8
   store i64 %12, ptr %17, align 8
-  %48 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3544
+  %48 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3544
   store i64 %11, ptr %48, align 8
-  %49 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3536
+  %49 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3536
   store i64 %10, ptr %49, align 8
-  %50 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3528
+  %50 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3528
   store i64 0, ptr %50, align 8
-  %51 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3520
+  %51 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3520
   store i64 57077, ptr %51, align 8
-  %52 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3512
+  %52 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3512
   store i64 61688, ptr %52, align 8
-  %53 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3504
+  %53 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3504
   store i64 %9, ptr %53, align 8
-  %54 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3496
+  %54 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3496
   store i64 %7, ptr %54, align 8
-  %55 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3488
+  %55 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3488
   store i64 %6, ptr %55, align 8
-  %56 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3480
+  %56 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3480
   store i64 -16, ptr %56, align 8
-  %57 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3472
+  %57 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3472
   store i64 -528, ptr %57, align 8
-  %58 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3464
+  %58 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3464
   store i64 %3, ptr %58, align 8
-  %59 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3456
+  %59 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3456
   store i64 %5, ptr %59, align 8
-  %60 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3448
+  %60 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3448
   store i64 %4, ptr %60, align 8
-  %61 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3440
+  %61 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3440
   store i64 %2, ptr %61, align 8
   %62 = and i32 %1, -3286
   %63 = and i8 %13, 1
@@ -129,7 +129,7 @@ entry:
   %65 = shl nuw nsw i32 %64, 10
   %66 = or disjoint i32 %65, %62
   %.0.load.ext = zext i32 %66 to i64
-  %67 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3432
+  %67 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3432
   store i64 %.0.load.ext, ptr %67, align 8
   %68 = getelementptr inbounds nuw i8, ptr %memory, i64 53886
   store i64 53918, ptr %68, align 8
@@ -174,11 +174,11 @@ entry:
   store i64 54795, ptr %88, align 8
   %89 = getelementptr inbounds nuw i8, ptr %memory, i64 54762
   store i64 54807, ptr %89, align 8
-  %90 = getelementptr inbounds nuw i8, ptr %stack9564, i64 4064
+  %90 = getelementptr inbounds nuw i8, ptr %stack9616, i64 4064
   store i64 0, ptr %90, align 8
   store i64 -20, ptr %81, align 8
   store i64 -36, ptr %72, align 8
-  %91 = getelementptr inbounds nuw i8, ptr %stack9564, i64 4060
+  %91 = getelementptr inbounds nuw i8, ptr %stack9616, i64 4060
   store i32 0, ptr %91, align 4
   %92 = getelementptr inbounds nuw i8, ptr %memory, i64 57181
   %93 = getelementptr inbounds nuw i8, ptr %memory, i64 57182
@@ -193,14 +193,14 @@ entry:
   %102 = getelementptr inbounds nuw i8, ptr %memory, i64 55985
   %103 = getelementptr inbounds nuw i8, ptr %memory, i64 55993
   %104 = getelementptr inbounds nuw i8, ptr %memory, i64 56001
-  %105 = getelementptr inbounds nuw i8, ptr %stack9564, i64 3424
+  %105 = getelementptr inbounds nuw i8, ptr %stack9616, i64 3424
   %106 = and i32 %1, -2100438
   br label %ADD_GPRv_IMMb_64_378
 
 ADD_GPRv_IMMb_64_378:                             ; preds = %ADD_GPRv_IMMb_64_638, %entry
-  %107 = phi i64 [ -16, %entry ], [ %.pre9640, %ADD_GPRv_IMMb_64_638 ]
-  %108 = phi i64 [ %5, %entry ], [ %.pre9638, %ADD_GPRv_IMMb_64_638 ]
-  %109 = phi i64 [ %4, %entry ], [ %.pre9637, %ADD_GPRv_IMMb_64_638 ]
+  %107 = phi i64 [ -16, %entry ], [ %.pre9692, %ADD_GPRv_IMMb_64_638 ]
+  %108 = phi i64 [ %5, %entry ], [ %.pre9690, %ADD_GPRv_IMMb_64_638 ]
+  %109 = phi i64 [ %4, %entry ], [ %.pre9689, %ADD_GPRv_IMMb_64_638 ]
   %110 = phi i64 [ %.0.load.ext, %entry ], [ %.pre, %ADD_GPRv_IMMb_64_638 ]
   %RSI1227.0 = phi i64 [ 61464, %entry ], [ %296, %ADD_GPRv_IMMb_64_638 ]
   %RAX1223.0 = phi i64 [ 57390, %entry ], [ %337, %ADD_GPRv_IMMb_64_638 ]
@@ -240,15 +240,15 @@ ADD_GPRv_IMMb_64_378:                             ; preds = %ADD_GPRv_IMMb_64_63
   store i64 %131, ptr %61, align 8
   %133 = or disjoint i32 %125, %127
   %134 = or disjoint i32 %133, 132
-  %.0.load.ext9551 = zext i32 %134 to i64
-  store i64 %.0.load.ext9551, ptr %67, align 8
+  %.0.load.ext9603 = zext i32 %134 to i64
+  store i64 %.0.load.ext9603, ptr %67, align 8
   %135 = load i64, ptr %122, align 8
   %136 = getelementptr i8, ptr %memory, i64 %135
   %137 = getelementptr i8, ptr %136, i64 1
   tail call void @llvm.memset.p0.i64(ptr noundef nonnull align 4 dereferenceable(16) %92, i8 -112, i64 16, i1 false)
   %138 = load i8, ptr %137, align 1
-  %R101233.sroa.0.0.insert.ext2785 = zext i8 %138 to i64
-  %139 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2785, 3
+  %R101233.sroa.0.0.insert.ext2823 = zext i8 %138 to i64
+  %139 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2823, 3
   %140 = getelementptr i8, ptr %stack_ptr, i64 %132
   %141 = getelementptr i8, ptr %140, i64 -128
   %142 = getelementptr i8, ptr %141, i64 %139
@@ -257,8 +257,8 @@ ADD_GPRv_IMMb_64_378:                             ; preds = %ADD_GPRv_IMMb_64_63
   %144 = load i64, ptr %20, align 8
   %145 = getelementptr i8, ptr %136, i64 3
   %146 = load i8, ptr %145, align 1
-  %R101233.sroa.0.0.insert.ext2780 = zext i8 %146 to i64
-  %147 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2780, 3
+  %R101233.sroa.0.0.insert.ext2818 = zext i8 %146 to i64
+  %147 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2818, 3
   %148 = getelementptr i8, ptr %stack_ptr, i64 %144
   %149 = getelementptr i8, ptr %148, i64 -128
   %150 = getelementptr i8, ptr %149, i64 %147
@@ -316,12 +316,12 @@ ADD_GPRv_IMMb_64_378:                             ; preds = %ADD_GPRv_IMMb_64_63
   %188 = or disjoint i32 %187, %181
   %189 = or disjoint i32 %188, %127
   %190 = or disjoint i32 %189, %125
-  %.0.load.ext9554 = zext i32 %190 to i64
-  store i64 %.0.load.ext9554, ptr %105, align 8
-  %RCX1225.sroa.0.sroa.0.sroa.0.0.extract.trunc8497 = trunc i32 %189 to i16
+  %.0.load.ext9606 = zext i32 %190 to i64
+  store i64 %.0.load.ext9606, ptr %105, align 8
+  %RCX1225.sroa.0.sroa.0.sroa.0.0.extract.trunc8548 = trunc i32 %189 to i16
   %191 = trunc i32 %190 to i16
   %RCX1225.sroa.0.sroa.0.sroa.442.0.insert.shift = and i16 %191, -256
-  %RCX1225.sroa.0.sroa.0.sroa.0.0.insert.ext = and i16 %RCX1225.sroa.0.sroa.0.sroa.0.0.extract.trunc8497, 255
+  %RCX1225.sroa.0.sroa.0.sroa.0.0.insert.ext = and i16 %RCX1225.sroa.0.sroa.0.sroa.0.0.extract.trunc8548, 255
   %RCX1225.sroa.0.sroa.0.sroa.0.0.insert.insert = or disjoint i16 %RCX1225.sroa.0.sroa.0.sroa.442.0.insert.shift, %RCX1225.sroa.0.sroa.0.sroa.0.0.insert.ext
   %192 = getelementptr i8, ptr %121, i64 -2
   store i16 %RCX1225.sroa.0.sroa.0.sroa.0.0.insert.insert, ptr %192, align 2
@@ -330,8 +330,8 @@ ADD_GPRv_IMMb_64_378:                             ; preds = %ADD_GPRv_IMMb_64_63
 MOVZX_GPR64_MEMw_608:                             ; preds = %ADD_GPRv_IMMb_64_378
   %193 = getelementptr i8, ptr %136, i64 17
   %194 = load i16, ptr %193, align 2
-  %RCX1225.sroa.0.0.insert.ext5869 = zext i16 %194 to i64
-  %195 = getelementptr inbounds nuw i8, ptr %memory, i64 %RCX1225.sroa.0.0.insert.ext5869
+  %RCX1225.sroa.0.0.insert.ext5920 = zext i16 %194 to i64
+  %195 = getelementptr inbounds nuw i8, ptr %memory, i64 %RCX1225.sroa.0.0.insert.ext5920
   %196 = getelementptr inbounds nuw i8, ptr %195, i64 57345
   %197 = load i16, ptr %196, align 2
   %198 = load i16, ptr %19, align 2
@@ -370,15 +370,15 @@ ADD_GPRv_IMMb_64_638:                             ; preds = %ADD_GPRv_IMMb_64_37
   %215 = and i32 %124, 2098176
   %216 = or disjoint i32 %215, %211
   %217 = or disjoint i32 %216, 132
-  %.0.load.ext9559 = zext i32 %217 to i64
-  store i64 %.0.load.ext9559, ptr %67, align 8
+  %.0.load.ext9611 = zext i32 %217 to i64
+  store i64 %.0.load.ext9611, ptr %67, align 8
   %218 = load i64, ptr %122, align 8
   %219 = getelementptr i8, ptr %memory, i64 %218
   %220 = getelementptr i8, ptr %219, i64 1
   tail call void @llvm.memset.p0.i64(ptr noundef nonnull align 4 dereferenceable(16) %92, i8 -112, i64 16, i1 false)
   %221 = load i8, ptr %220, align 1
-  %R101233.sroa.0.0.insert.ext2729 = zext i8 %221 to i64
-  %222 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2729, 3
+  %R101233.sroa.0.0.insert.ext2767 = zext i8 %221 to i64
+  %222 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2767, 3
   %223 = getelementptr i8, ptr %stack_ptr, i64 %214
   %224 = getelementptr i8, ptr %223, i64 -128
   %225 = getelementptr i8, ptr %224, i64 %222
@@ -387,8 +387,8 @@ ADD_GPRv_IMMb_64_638:                             ; preds = %ADD_GPRv_IMMb_64_37
   %227 = load i64, ptr %20, align 8
   %228 = getelementptr i8, ptr %219, i64 3
   %229 = load i8, ptr %228, align 1
-  %R101233.sroa.0.0.insert.ext2724 = zext i8 %229 to i64
-  %230 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2724, 3
+  %R101233.sroa.0.0.insert.ext2762 = zext i8 %229 to i64
+  %230 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2762, 3
   %231 = getelementptr i8, ptr %stack_ptr, i64 %227
   %232 = getelementptr i8, ptr %231, i64 -128
   %233 = getelementptr i8, ptr %232, i64 %230
@@ -406,24 +406,24 @@ ADD_GPRv_IMMb_64_638:                             ; preds = %ADD_GPRv_IMMb_64_37
   %241 = load i64, ptr %20, align 8
   %242 = getelementptr i8, ptr %219, i64 17
   %243 = load i8, ptr %242, align 1
-  %R101233.sroa.0.0.insert.ext2719 = zext i8 %243 to i64
-  %244 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2719, 3
+  %R101233.sroa.0.0.insert.ext2757 = zext i8 %243 to i64
+  %244 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2757, 3
   %245 = getelementptr i8, ptr %stack_ptr, i64 %241
   %246 = getelementptr i8, ptr %245, i64 -128
   %247 = getelementptr i8, ptr %246, i64 %244
   store i64 %240, ptr %247, align 8
   %248 = getelementptr i8, ptr %219, i64 19
   %249 = load i8, ptr %248, align 1
-  %R101233.sroa.0.0.insert.ext2714 = zext i8 %249 to i64
-  %250 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2714, 3
+  %R101233.sroa.0.0.insert.ext2752 = zext i8 %249 to i64
+  %250 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2752, 3
   %251 = getelementptr i8, ptr %246, i64 %250
   %252 = load i64, ptr %251, align 8
   store i64 %252, ptr %122, align 8
   %253 = load i64, ptr %20, align 8
   %254 = getelementptr i8, ptr %219, i64 21
   %255 = load i8, ptr %254, align 1
-  %R101233.sroa.0.0.insert.ext2709 = zext i8 %255 to i64
-  %256 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2709, 3
+  %R101233.sroa.0.0.insert.ext2747 = zext i8 %255 to i64
+  %256 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2747, 3
   %257 = getelementptr i8, ptr %stack_ptr, i64 %253
   %258 = getelementptr i8, ptr %257, i64 -128
   %259 = getelementptr i8, ptr %258, i64 %256
@@ -437,8 +437,8 @@ ADD_GPRv_IMMb_64_638:                             ; preds = %ADD_GPRv_IMMb_64_37
   %264 = load i64, ptr %20, align 8
   %265 = getelementptr i8, ptr %219, i64 33
   %266 = load i8, ptr %265, align 1
-  %R101233.sroa.0.0.insert.ext2704 = zext i8 %266 to i64
-  %267 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2704, 3
+  %R101233.sroa.0.0.insert.ext2742 = zext i8 %266 to i64
+  %267 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2742, 3
   %268 = getelementptr i8, ptr %stack_ptr, i64 %264
   %269 = getelementptr i8, ptr %268, i64 -128
   %270 = getelementptr i8, ptr %269, i64 %267
@@ -447,8 +447,8 @@ ADD_GPRv_IMMb_64_638:                             ; preds = %ADD_GPRv_IMMb_64_37
   store i64 %271, ptr %272, align 8
   %273 = getelementptr i8, ptr %219, i64 35
   %274 = load i8, ptr %273, align 1
-  %R101233.sroa.0.0.insert.ext2694 = zext i8 %274 to i64
-  %275 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2694, 3
+  %R101233.sroa.0.0.insert.ext2732 = zext i8 %274 to i64
+  %275 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2732, 3
   %276 = getelementptr i8, ptr %269, i64 %275
   %277 = load i64, ptr %276, align 8
   store i64 %277, ptr %152, align 8
@@ -464,49 +464,49 @@ ADD_GPRv_IMMb_64_638:                             ; preds = %ADD_GPRv_IMMb_64_37
   %284 = load i64, ptr %20, align 8
   %285 = getelementptr i8, ptr %219, i64 48
   %286 = load i8, ptr %285, align 1
-  %R101233.sroa.0.0.insert.ext2689 = zext i8 %286 to i64
-  %287 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2689, 3
+  %R101233.sroa.0.0.insert.ext2727 = zext i8 %286 to i64
+  %287 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2727, 3
   %288 = getelementptr i8, ptr %stack_ptr, i64 %284
   %289 = getelementptr i8, ptr %288, i64 -128
   %290 = getelementptr i8, ptr %289, i64 %287
   store i32 %282, ptr %290, align 4
   %291 = getelementptr i8, ptr %219, i64 50
   %292 = load i8, ptr %291, align 1
-  %R101233.sroa.0.0.insert.ext2684 = zext i8 %292 to i64
-  %293 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2684, 3
+  %R101233.sroa.0.0.insert.ext2722 = zext i8 %292 to i64
+  %293 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2722, 3
   %294 = getelementptr i8, ptr %289, i64 %293
   %295 = load i64, ptr %294, align 8
-  %RDX1226.sroa.0.0.extract.trunc4772 = trunc i64 %295 to i32
+  %RDX1226.sroa.0.0.extract.trunc4823 = trunc i64 %295 to i32
   %296 = add i64 %RSI1227.0, -12
   %297 = getelementptr inbounds i8, ptr %memory, i64 %296
-  store i32 %RDX1226.sroa.0.0.extract.trunc4772, ptr %297, align 4
+  store i32 %RDX1226.sroa.0.0.extract.trunc4823, ptr %297, align 4
   %298 = getelementptr i8, ptr %219, i64 52
   %299 = load i32, ptr %298, align 4
   store i32 %299, ptr %152, align 4
-  %300 = add i32 %299, %RDX1226.sroa.0.0.extract.trunc4772
+  %300 = add i32 %299, %RDX1226.sroa.0.0.extract.trunc4823
   store i32 %300, ptr %297, align 4
   %301 = load i64, ptr %20, align 8
   %302 = getelementptr i8, ptr %219, i64 58
   %303 = load i8, ptr %302, align 1
-  %R101233.sroa.0.0.insert.ext2679 = zext i8 %303 to i64
-  %304 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2679, 3
+  %R101233.sroa.0.0.insert.ext2717 = zext i8 %303 to i64
+  %304 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2717, 3
   %305 = getelementptr i8, ptr %stack_ptr, i64 %301
   %306 = getelementptr i8, ptr %305, i64 -128
   %307 = getelementptr i8, ptr %306, i64 %304
   store i32 %300, ptr %307, align 4
   %308 = getelementptr i8, ptr %219, i64 60
   %309 = load i8, ptr %308, align 1
-  %R101233.sroa.0.0.insert.ext2674 = zext i8 %309 to i64
-  %310 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2674, 3
+  %R101233.sroa.0.0.insert.ext2712 = zext i8 %309 to i64
+  %310 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2712, 3
   %311 = getelementptr i8, ptr %306, i64 %310
   %312 = load i64, ptr %311, align 8
-  %RDX1226.sroa.0.0.extract.trunc4765 = trunc i64 %312 to i32
-  store i32 %RDX1226.sroa.0.0.extract.trunc4765, ptr %297, align 4
+  %RDX1226.sroa.0.0.extract.trunc4816 = trunc i64 %312 to i32
+  store i32 %RDX1226.sroa.0.0.extract.trunc4816, ptr %297, align 4
   %313 = load i64, ptr %20, align 8
   %314 = getelementptr i8, ptr %219, i64 62
   %315 = load i8, ptr %314, align 1
-  %R101233.sroa.0.0.insert.ext2669 = zext i8 %315 to i64
-  %316 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2669, 3
+  %R101233.sroa.0.0.insert.ext2707 = zext i8 %315 to i64
+  %316 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2707, 3
   %317 = getelementptr i8, ptr %stack_ptr, i64 %313
   %318 = getelementptr i8, ptr %317, i64 -128
   %319 = getelementptr i8, ptr %318, i64 %316
@@ -522,22 +522,22 @@ ADD_GPRv_IMMb_64_638:                             ; preds = %ADD_GPRv_IMMb_64_37
   %326 = load i64, ptr %20, align 8
   %327 = getelementptr i8, ptr %219, i64 74
   %328 = load i8, ptr %327, align 1
-  %R101233.sroa.0.0.insert.ext2664 = zext i8 %328 to i64
-  %329 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2664, 3
+  %R101233.sroa.0.0.insert.ext2702 = zext i8 %328 to i64
+  %329 = shl nuw nsw i64 %R101233.sroa.0.0.insert.ext2702, 3
   %330 = getelementptr i8, ptr %stack_ptr, i64 %326
   %331 = getelementptr i8, ptr %330, i64 -128
   %332 = getelementptr i8, ptr %331, i64 %329
   %333 = load i64, ptr %332, align 8
-  %RDX1226.sroa.0.0.extract.trunc4757 = trunc i64 %333 to i32
+  %RDX1226.sroa.0.0.extract.trunc4808 = trunc i64 %333 to i32
   %334 = getelementptr inbounds i8, ptr %stack_ptr, i64 %325
-  store i32 %RDX1226.sroa.0.0.extract.trunc4757, ptr %334, align 4
+  store i32 %RDX1226.sroa.0.0.extract.trunc4808, ptr %334, align 4
   %335 = getelementptr i8, ptr %219, i64 76
   %336 = load i16, ptr %335, align 2
-  %RCX1225.sroa.0.0.insert.ext5432 = zext i16 %336 to i64
-  %337 = add nuw nsw i64 %RCX1225.sroa.0.0.insert.ext5432, 57344
+  %RCX1225.sroa.0.0.insert.ext5483 = zext i16 %336 to i64
+  %337 = add nuw nsw i64 %RCX1225.sroa.0.0.insert.ext5483, 57344
   %.pre = load i64, ptr %67, align 8
-  %.pre9637 = load i64, ptr %60, align 8
-  %.pre9638 = load i64, ptr %59, align 8
-  %.pre9640 = load i64, ptr %56, align 8
+  %.pre9689 = load i64, ptr %60, align 8
+  %.pre9690 = load i64, ptr %59, align 8
+  %.pre9692 = load i64, ptr %56, align 8
   br label %ADD_GPRv_IMMb_64_378
 }

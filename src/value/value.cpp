@@ -1,13 +1,16 @@
 #include <vexa/vexa.h>
 
-std::vector<bw::Term> vexa::value::possible_values(const std::vector<bw::Term> &constraints)
+std::vector<bw::Term>
+    vexa::value::possible_values(const std::vector<bw::Term> &constraints, bw::Result *result)
 {
     std::vector<bw::Term> assumptions = constraints;
     std::vector<bw::Term> solved_values;
     solved_values.reserve(20);
 
+    bw::Result check = bw::Result::UNKNOWN;
     while (solved_values.size() < 20) {
-        if (solver->check_sat(assumptions) != bw::Result::SAT)
+        check = solver->check_sat(assumptions);
+        if (check != bw::Result::SAT)
             break;
 
         bw::Term evaluated = solver->get_value(term);
@@ -15,6 +18,8 @@ std::vector<bw::Term> vexa::value::possible_values(const std::vector<bw::Term> &
         solved_values.push_back(std::move(evaluated));
     }
 
+    if (result)
+        *result = check;
     return solved_values;
 }
 

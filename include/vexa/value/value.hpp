@@ -32,7 +32,8 @@ class value
         : _kind(kind::value), term(std::move(e)), term_manager(&tm), solver(&bzla)
     {}
 
-    std::vector<bw::Term> possible_values(const std::vector<bw::Term> &constraints);
+    std::vector<bw::Term>
+        possible_values(const std::vector<bw::Term> &constraints, bw::Result *result = nullptr);
     value *simplify();
     bw::Term as_expr() const;
     bw::Term as_expr_bool() const;

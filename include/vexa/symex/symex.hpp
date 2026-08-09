@@ -8,6 +8,11 @@
 
 namespace vexa
 {
+struct symex_state
+{
+    std::unordered_map<llvm::Value *, vexa::value *> vars;
+};
+
 class symex
 {
   public:
@@ -21,6 +26,8 @@ class symex
     void set(llvm::Value *v, vexa::value *e);
     void clear();
     bool is_sync(llvm::Value *v);
+    symex_state take_snapshot() const;
+    void restore_snapshot(symex_state state);
 
   private:
     bw::TermManager *term_manager;

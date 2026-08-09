@@ -74,3 +74,13 @@ bool vexa::symex::is_sync(llvm::Value *v)
         return true;
     return false;
 }
+
+vexa::symex_state vexa::symex::take_snapshot() const
+{
+    return {vars};
+}
+
+void vexa::symex::restore_snapshot(vexa::symex_state state)
+{
+    vars = std::move(state.vars);
+}
