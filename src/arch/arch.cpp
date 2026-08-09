@@ -219,6 +219,7 @@ ret:
         }
     }
 
+    symex->clear_specialization();
     builder->eraseDeletedInstructions();
     return;
 }

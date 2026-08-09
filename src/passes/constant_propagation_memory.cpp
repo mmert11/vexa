@@ -18,11 +18,11 @@
 #include <llvm/TargetParser/Triple.h>
 
 vexa::passes::constant_propagation::memory_propagation_result
-vexa::passes::constant_propagation::concretize_memory_loads(
-    llvm::Function *function,
-    llvm::DominatorTree &DT,
-    llvm::LoopInfo &LI,
-    value_simplifier &simplify_once)
+    vexa::passes::constant_propagation::concretize_memory_loads(
+        llvm::Function *function,
+        llvm::DominatorTree &DT,
+        llvm::LoopInfo &LI,
+        value_simplifier &simplify_once)
 {
     const auto &symex = context->symex;
     const auto &builder = context->builder;

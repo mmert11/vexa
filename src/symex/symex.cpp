@@ -32,7 +32,7 @@ vexa::pointer *vexa::symex::pointer(uint64_t value, std::shared_ptr<vexa::mem_pa
 
 vexa::value *vexa::symex::value(bw::Term e)
 {
-    values.emplace_back(std::move(e), *term_manager, *solver);
+    values.emplace_back(specialize(std::move(e)), *term_manager, *solver);
     return &values.back();
 }
 
@@ -40,9 +40,24 @@ vexa::value *vexa::symex::get(llvm::Value *v)
 {
     VEXA_ASSERT(v);
 
+    auto cached = specialized_vars.find(v);
+    if (cached != specialized_vars.end())
+        return cached->second;
+
     auto it = vars.find(v);
-    if (it != vars.end())
-        return it->second;
+    if (it != vars.end()) {
+        vexa::value *original = it->second;
+        bw::Term term = specialize(original->as_expr());
+        if (term == original->as_expr())
+            return original;
+
+        values.emplace_back(std::move(term), *term_manager, *solver);
+        vexa::value *specialized = &values.back();
+        if (auto *ptr = vexa::to_ptr(original))
+            specialized = pointer(specialized, ptr->get_page());
+        specialized_vars.emplace(v, specialized);
+        return specialized;
+    }
 
     if (auto *C = llvm::dyn_cast<llvm::ConstantInt>(v))
         return concrete(C->getZExtValue(), C->getBitWidth());
@@ -59,13 +74,41 @@ vexa::value *vexa::symex::get(llvm::Value *v)
 void vexa::symex::set(llvm::Value *v, vexa::value *e)
 {
     vars[v] = e;
+    specialized_vars.erase(v);
 }
 
 void vexa::symex::clear()
 {
     vars.clear();
+    clear_specialization();
     pointers.clear();
     values.clear();
+}
+
+void vexa::symex::specialize(const bw::Term &from, const bw::Term &to)
+{
+    auto it = substitutions.find(from);
+    if (it != substitutions.end() && it->second == to)
+        return;
+
+    substitutions.insert_or_assign(from, to);
+    specialized_vars.clear();
+}
+
+void vexa::symex::clear_specialization()
+{
+    specialized_vars.clear();
+    substitutions.clear();
+}
+bw::Term vexa::symex::specialize(bw::Term term)
+{
+    if (substitutions.empty())
+        return term;
+
+    bw::Term specialized = term_manager->substitute_term(term, substitutions);
+    if (specialized != term)
+        return solver->simplify(specialized);
+    return term;
 }
 
 bool vexa::symex::is_sync(llvm::Value *v)
@@ -77,10 +120,11 @@ bool vexa::symex::is_sync(llvm::Value *v)
 
 vexa::symex_state vexa::symex::take_snapshot() const
 {
-    return {vars};
+    return {specialized_vars, substitutions};
 }
 
 void vexa::symex::restore_snapshot(vexa::symex_state state)
 {
-    vars = std::move(state.vars);
+    specialized_vars = std::move(state.specialized_vars);
+    substitutions = std::move(state.substitutions);
 }

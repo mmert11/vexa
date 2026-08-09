@@ -138,18 +138,18 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
 
     // clone the split basic block for every possible address
     //
-    std::vector<llvm::BasicBlock *> tails(values.size());
-    tails.front() = suffix;
+    std::vector<llvm::BasicBlock *> possible_blocks(values.size());
+    possible_blocks.front() = suffix;
     for (size_t i = 1; i < values.size(); i++) {
         llvm::ValueToValueMapTy map;
-        tails[i] = llvm::CloneBasicBlock(
+        possible_blocks[i] = llvm::CloneBasicBlock(
             suffix,
             map,
             std::format(".{}_{}", write ? "write" : "read", vexa::value::as_uint64(values[i])),
             cpu->vexa_lifted);
         // remap operands
         //
-        for (llvm::Instruction &instruction : *tails[i])
+        for (llvm::Instruction &instruction : *possible_blocks[i])
             llvm::RemapInstruction(
                 &instruction, map, llvm::RF_NoModuleLevelChanges | llvm::RF_IgnoreMissingLocals);
     }
@@ -167,13 +167,17 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
     llvm::SwitchInst *dispatch =
         builder->CreateSwitch(call.getArgOperand(1), default_block, values.size());
 
-    mem_state base_memory = memory->take_snapshot();
-    symex_state base_symex = symex->take_snapshot();
+    //mem_state base_memory = memory->take_snapshot();
+    //symex_state base_symex = symex->take_snapshot();
+
+    auto base_snapshot = cpu->take_snapshot(cpu->instruction.next_pc, cpu->block);
     std::vector<bw::Term> base_constraints = cpu->path_constraints;
 
     auto execute = [&](size_t index) {
-        memory->restore_snapshot(base_memory);
-        symex->restore_snapshot(base_symex);
+        //memory->restore_snapshot(base_memory);
+        //symex->restore_snapshot(base_symex);
+
+        cpu->restore_snapshot(base_snapshot);
         cpu->path_constraints = base_constraints;
 
         const bw::Term &candidate = values[index];
@@ -184,6 +188,7 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
 
         cpu->path_constraints.push_back(
             context->term_manager.mk_term(bw::Kind::EQUAL, {address->as_expr(), candidate}));
+        symex->specialize(address->as_expr(), candidate);
 
         vexa::value *solved = symex->value(candidate);
         vexa::dual_pointer page = cpu->get_page(solved);
@@ -195,19 +200,22 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
                     page.l,
                     llvm::ConstantInt::get(address_type, concrete_address))
                 .to_ptr();
+        
+        // memory write
         if (write)
             run(builder->CreateStore(call.getOperand(2), resolved.l));
+        // memory read
         else {
             auto *load = builder->CreateLoad(builder->getIntNTy(size), resolved.l);
             symex->set(load, memory->read(resolved.v, size));
-            for (llvm::Instruction &instruction : *tails[index])
+            for (llvm::Instruction &instruction : *possible_blocks[index])
                 instruction.replaceUsesOfWith(&call, load);
         }
 
-        builder->CreateBr(tails[index]);
-        builder->SetInsertPoint(tails[index]);
-        run_block(tails[index]);
-        builder->SetInsertPoint(tails[index]);
+        builder->CreateBr(possible_blocks[index]);
+        builder->SetInsertPoint(possible_blocks[index]);
+        run_block(possible_blocks[index]);
+        builder->SetInsertPoint(possible_blocks[index]);
     };
 
     // execute the every address case except for the first one

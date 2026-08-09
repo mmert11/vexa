@@ -10,7 +10,8 @@ namespace vexa
 {
 struct symex_state
 {
-    std::unordered_map<llvm::Value *, vexa::value *> vars;
+    std::unordered_map<llvm::Value *, vexa::value *> specialized_vars;
+    std::unordered_map<bw::Term, bw::Term> substitutions;
 };
 
 class symex
@@ -24,17 +25,22 @@ class symex
     vexa::value *value(bw::Term e);
     vexa::value *get(llvm::Value *v);
     void set(llvm::Value *v, vexa::value *e);
+    void specialize(const bw::Term &from, const bw::Term &to);
+    void clear_specialization();
     void clear();
     bool is_sync(llvm::Value *v);
     symex_state take_snapshot() const;
     void restore_snapshot(symex_state state);
 
   private:
+    bw::Term specialize(bw::Term term);
     bw::TermManager *term_manager;
     bw::Bitwuzla *solver;
     vexa::context *context;
     std::deque<vexa::value> values;
     std::deque<vexa::pointer> pointers;
     std::unordered_map<llvm::Value *, vexa::value *> vars;
+    std::unordered_map<llvm::Value *, vexa::value *> specialized_vars;
+    std::unordered_map<bw::Term, bw::Term> substitutions;
 };
 } // namespace vexa

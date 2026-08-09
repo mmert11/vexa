@@ -45,7 +45,7 @@ class constant_propagation : public vexa::ir::pass
         llvm::LoopInfo &LI,
         const std::unordered_set<llvm::BasicBlock *> &joined_blocks);
     static std::vector<llvm::Instruction *>
-    collect_instruction_users(llvm::Instruction *instruction);
+        collect_instruction_users(llvm::Instruction *instruction);
     std::vector<llvm::Instruction *> propagate_ssa_values(
         llvm::Function *function,
         llvm::LoopInfo &LI,

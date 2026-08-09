@@ -49,7 +49,7 @@ bool vexa::passes::constant_propagation::is_ssa_fold_candidate(
 }
 
 std::vector<llvm::Instruction *>
-vexa::passes::constant_propagation::collect_instruction_users(llvm::Instruction *instruction)
+    vexa::passes::constant_propagation::collect_instruction_users(llvm::Instruction *instruction)
 {
     std::vector<llvm::Instruction *> users;
     users.reserve(instruction->getNumUses());
