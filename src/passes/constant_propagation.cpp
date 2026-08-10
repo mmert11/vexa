@@ -9,8 +9,6 @@
 #include <llvm/IR/CFG.h>
 #include <llvm/IR/Dominators.h>
 
-// maintaining this pass was too difficult and draining for me
-// so i let the ai handle it all, bugs and edge-cases are expected
 // you can find the legacy version here
 // https://github.com/mmert11/vexa/blob/1.2/src/passes/constant_propagation.cpp
 
