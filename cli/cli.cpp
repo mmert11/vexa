@@ -8,15 +8,6 @@
 
 using namespace std;
 
-/*
-if (false)
-{
-    vexa::binary binary("/media/mert/Yeni Birim/input.exe");
-    engine.map_binary(binary);
-    rip = 0x1400016d0;
-}
-*/
-
 int main(int argc, char **argv)
 {
     std::string input_file, output_file;
@@ -29,6 +20,7 @@ int main(int argc, char **argv)
     bool cfg_recovery = false;
     bool vcfg_recovery = false;
     bool vcfg_path_sensitive = false;
+    bool no_fork_at_cmovs = false;
 
     CLI::App cli{
         "vexa-cli: command-line interface for lifting & deobfuscating binaries statically"};
@@ -54,6 +46,8 @@ int main(int argc, char **argv)
     cli.add_flag("--vcfg-recovery", vcfg_recovery, "Enables Virtual CFG recovery mode");
     cli.add_flag(
         "--cfg-path-sensitive", vcfg_path_sensitive, "Do not merge paths while preserving loops.");
+    cli.add_flag("--no-fork-at-cmovs", no_fork_at_cmovs, "Doesn't fork paths at conditional move instructions.");
+
     auto recompile_option =
         cli.add_option(
                "-r,--recompile",
@@ -85,6 +79,9 @@ int main(int argc, char **argv)
     if (vcfg_path_sensitive)
         engine.set_option(
             vexa::option::CFG_JOIN_POLICY, vexa::cfg_join_policy_t::SPECIALIZE_BY_PATH);
+
+    if (no_fork_at_cmovs)
+            engine.set_option(vexa::option::FORK_AT_CMOVS, 0);
 
     engine.set_option(vexa::option::OPAQUE_SOLVING, !no_opaque_solving);
     engine.set_option(vexa::option::CONSTANT_PROPAGATION, !no_constant_propagation);

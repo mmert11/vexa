@@ -32,6 +32,25 @@ vexa::value *vexa::value::simplify()
     return this;
 }
 
+vexa::value *vexa::value::simplify(const std::vector<bw::Term> &constraints)
+{
+    simplify();
+    if (is_concrete() || solver->check_sat(constraints) != bw::Result::SAT)
+        return this;
+
+    bw::Term candidate = solver->get_value(term);
+    std::vector<bw::Term> assumptions = constraints;
+
+    // check if it can take another possible value
+    //
+    assumptions.push_back(term_manager->mk_term(bw::Kind::DISTINCT, {term, candidate}));
+    if (solver->check_sat(assumptions) == bw::Result::UNSAT) {
+        term = std::move(candidate);
+        simplified = true;
+    }
+    return this;
+}
+
 bool vexa::value::is_symbolic() const
 {
     return !term.is_value();

@@ -44,7 +44,6 @@ struct mem_page
         memory->insert_or_assign(address, std::move(value));
     }
 
-  private:
     friend class memory;
     storage_t initial_memory;
     std::shared_ptr<storage_t> memory;

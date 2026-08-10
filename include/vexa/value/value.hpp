@@ -45,6 +45,7 @@ class value
     std::vector<bw::Term>
         possible_values(const std::vector<bw::Term> &constraints, bw::Result *result = nullptr);
     value *simplify();
+    value *simplify(const std::vector<bw::Term> &constraints);
     bw::Term as_expr() const;
     bw::Term as_expr_bool() const;
     bw::Term operator+(const value &rhs) const;
@@ -112,7 +113,7 @@ class value
 class pointer : public value
 {
   public:
-    pointer(vexa::context* c) : value(c, kind::pointer) {}
+    pointer(vexa::context *c) : value(c, kind::pointer) {}
     pointer(const vexa::value &v, std::shared_ptr<mem_page> p)
         : value(v, kind::pointer), page(std::move(p))
     {}

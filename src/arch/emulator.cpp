@@ -165,13 +165,13 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
     builder->SetInsertPoint(default_block);
     builder->CreateUnreachable();
     builder->SetInsertPoint(source);
-    
+
     llvm::SwitchInst *dispatch =
         builder->CreateSwitch(call.getArgOperand(1), default_block, values.size());
     auto base_snapshot = cpu->take_snapshot(cpu->instruction.next_pc, cpu->block);
 
     auto execute = [&](size_t index) {
-        // reset state to the beginning 
+        // reset state to the beginning
         //
         cpu->restore_snapshot(base_snapshot);
 
@@ -183,10 +183,21 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
             std::format("{}_{:x}", write ? "write" : "read", concrete_address));
         dispatch->addCase(llvm::ConstantInt::get(address_type, concrete_address), case_block);
 
-        // add to path constraints 
+        // add to path constraints
         cpu->path_constraints.push_back(
             context->term_manager.mk_term(bw::Kind::EQUAL, {address->as_expr(), candidate}));
         symex->specialize(address->as_expr(), candidate);
+
+        // experimental solution for vmp 3.3.1
+        // force simplify the registers using solver
+        //
+        for (const auto &[reg_id, reg] : cpu->registers) {
+            if (reg->parent)
+                continue;
+            vexa::value *value = cpu->read_register(reg_id)->simplify(cpu->path_constraints);
+            if (value->is_concrete())
+                cpu->write_register(reg_id, value);
+        }
 
         vexa::value *solved = symex->value(candidate);
         vexa::dual_pointer page = cpu->get_page(solved);

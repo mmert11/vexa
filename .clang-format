@@ -39,3 +39,6 @@ MaxEmptyLinesToKeep: 1
 KeepEmptyLinesAtTheStartOfBlocks: false
 
 IndentWrappedFunctionNames: true
+ReflowComments: false
+AlignTrailingComments:
+  Kind: Leave

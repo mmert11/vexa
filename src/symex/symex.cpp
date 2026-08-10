@@ -7,7 +7,8 @@ vexa::symex::symex(vexa::context *_context)
 vexa::value *vexa::symex::symbolic(std::string name, int size)
 {
     bw::Sort sort = term_manager->mk_bv_sort(size);
-    values.emplace_back(context, term_manager->mk_const(sort, std::move(name)), *term_manager, *solver);
+    values.emplace_back(
+        context, term_manager->mk_const(sort, std::move(name)), *term_manager, *solver);
     return &values.back();
 }
 

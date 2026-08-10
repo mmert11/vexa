@@ -397,7 +397,7 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
             return internal_lifter_status::successful;
         }
 
-        //        LOG_WARNING(logger, "Solving -> {}", next->as_expr().str());
+        LOG_WARNING(logger, "Solving -> {}", next->as_expr().str());
 
         auto possible_addrs = next->possible_values(path_constraints);
         for (auto &possible_addr : possible_addrs) {
@@ -427,7 +427,7 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
 
         // THROW("Unresolved jump");
     }
-    else if (inst.function.starts_with("CMOV") && true)
+    else if (inst.function.starts_with("CMOV") && context->get_option(option::FORK_AT_CMOVS))
         handle_conditional_moves(inst, block);
 
     PC = inst.next_pc;

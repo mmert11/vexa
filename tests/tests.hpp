@@ -121,5 +121,14 @@ inline uint64_t hash_file_fnv1a64(const std::string& path)
     return hash;
 }
 
+inline bool is_wine_installed()
+{
+#ifdef _WIN32
+    return false;
+#else
+    return std::system("command -v wine >/dev/null 2>&1") == 0;
+#endif
+}
+
 #undef VEXA_POPEN
 #undef VEXA_PCLOSE

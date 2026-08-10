@@ -40,6 +40,11 @@ class engine;
 
 enum class option
 {
+    // Decides whether or not to fork paths at conditional moves
+    // 0: disabled
+    // 1: enabled
+    FORK_AT_CMOVS,
+
     // Solves opaque predicates during symbolic execution.
     // However, it can prevent CFG recovery.
     // Shouldn't be used with CFG_RECOVERY option.
@@ -130,6 +135,7 @@ class context
     int get_option(option opt);
 
     std::unordered_map<option, int> options = {
+        {option::FORK_AT_CMOVS, 1},
         {option::OPAQUE_SOLVING, 1},
         {option::MODE, 0},
         {option::STATE_CLEANUP, 1},
