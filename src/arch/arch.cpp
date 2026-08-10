@@ -19,7 +19,19 @@ vexa::cpu::snapshot vexa::cpu::take_snapshot(uint64_t pc, llvm::BasicBlock *bb)
         memory->take_snapshot(), symex->take_snapshot(), pc, VPC, bb, VJMP, PATH, path_constraints};
 }
 
-void vexa::cpu::restore_snapshot(vexa::cpu::snapshot ss)
+void vexa::cpu::restore_snapshot(const vexa::cpu::snapshot &ss)
+{
+    memory->restore_snapshot(ss.mem_ss);
+    symex->restore_snapshot(ss.symex_ss);
+    builder->SetInsertPoint(ss.bb);
+    PC = ss.pc;
+    VPC = ss.vpc;
+    VJMP = ss.vjmp;
+    PATH = ss.path;
+    path_constraints = ss.path_constraints;
+}
+
+void vexa::cpu::restore_snapshot(vexa::cpu::snapshot &&ss)
 {
     memory->restore_snapshot(ss.mem_ss);
     symex->restore_snapshot(std::move(ss.symex_ss));
@@ -28,7 +40,7 @@ void vexa::cpu::restore_snapshot(vexa::cpu::snapshot ss)
     VPC = ss.vpc;
     VJMP = ss.vjmp;
     PATH = std::move(ss.path);
-    path_constraints = ss.path_constraints;
+    path_constraints = std::move(ss.path_constraints);
 }
 
 remill::Register *vexa::cpu::get_register(vexa::reg_t r)
@@ -190,9 +202,9 @@ void vexa::cpu::run(uint64_t pc)
 
             LOG_INFO(logger, "Exploring new path");
 
-            snapshot path = unexplored_paths.top();
+            snapshot path = std::move(unexplored_paths.top());
             unexplored_paths.pop();
-            restore_snapshot(path);
+            restore_snapshot(std::move(path));
 
             [[fallthrough]];
         }
@@ -286,12 +298,11 @@ vexa::cpu::internal_lifter_status vexa::cpu::process_instruction()
     // read 15 bytes at program counter
     // custom memory access for performance
     //
-    auto &cm = global_memory->concrete_memory;
     for (int i = 0; i < 15; i++) {
-        auto it = cm.find(PC + i);
-        if (it == cm.end() || !it->second.has_value())
+        const std::optional<bw::Term> *byte = global_memory->find(PC + i);
+        if (!byte || !*byte)
             break;
-        const bw::Term &byte_expr = *it->second;
+        const bw::Term &byte_expr = **byte;
         if (!byte_expr.is_value())
             break;
         bytes_str.push_back(static_cast<char>(vexa::value::as_uint64(byte_expr) & 0xFF));
@@ -517,8 +528,7 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
 
     builder->SetInsertPoint(false_block);
     VEXA_EXEC(builder->CreateStore(false_val, store_ptr));
-    vexa::cpu::snapshot false_path = take_snapshot(inst.next_pc, false_block);
-    unexplored_paths.push(false_path);
+    unexplored_paths.push(take_snapshot(inst.next_pc, false_block));
 
     restore_snapshot(base_snapshot);
     builder->SetInsertPoint(true_block);
@@ -561,8 +571,7 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
     // save fallthrough path
     //
     path_constraints.push_back(!*condition.v);
-    snapshot path_s = take_snapshot(fallthrough_pc, fallthrough_bb);
-    unexplored_paths.push(path_s);
+    unexplored_paths.push(take_snapshot(fallthrough_pc, fallthrough_bb));
 
     // create conditional jump
     //

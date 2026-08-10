@@ -17,12 +17,16 @@ void vexa::memory::write(vexa::pointer *addr, vexa::value *val)
     VEXA_ASSERT(addr->is_concrete());
 
     // concrete write
-    auto &page = addr->get_page()->concrete_memory;
+    auto page = addr->get_page();
     uint64_t base = addr->as_uint64();
     int byte_size = val->size() / 8;
 
-    for (int i = 0; i < byte_size; i++)
-        page[base + i] = context->bitwuzla->simplify(val->extract(i * 8 + 7, i * 8));
+    for (int i = 0; i < byte_size; i++) {
+        bw::Term byte = val->extract(i * 8 + 7, i * 8);
+        if (!byte.is_value())
+            byte = context->bitwuzla->simplify(byte);
+        page->write(base + i, std::move(byte));
+    }
 }
 
 // internal read function
@@ -31,14 +35,12 @@ vexa::value *vexa::memory::read(vexa::pointer *addr, int size)
     addr->simplify();
     VEXA_ASSERT(addr->is_concrete());
 
-    // helper for symbolic reads
-    //
+    // helper
     auto page = addr->get_page();
-    auto &concrete_memory = page->concrete_memory;
     auto read_byte = [&](uint64_t address) {
-        auto it = concrete_memory.find(address);
-        if (it != concrete_memory.end() && it->second)
-            return *it->second;
+        const std::optional<bw::Term> *byte = page->find(address);
+        if (byte && *byte)
+            return **byte;
 
         return context->term_manager.mk_const(
             context->term_manager.mk_bv_sort(8),
@@ -55,24 +57,25 @@ vexa::value *vexa::memory::read(vexa::pointer *addr, int size)
     for (int i = byte_size - 2; i >= 0; i--)
         value = context->term_manager.mk_term(bw::Kind::BV_CONCAT, {value, read_byte(base + i)});
 
-    return context->symex->value(context->bitwuzla->simplify(value));
+    if (!value.is_value())
+        value = context->bitwuzla->simplify(value);
+    return context->symex->value(std::move(value));
 }
 
-vexa::mem_state vexa::memory::take_snapshot()
+vexa::mem_state vexa::memory::take_snapshot() const
 {
     vexa::mem_state state;
-    for (auto &page : pages)
-        state.pages.push_back(*page);
-
+    state.pages.reserve(pages.size());
+    for (const auto &page : pages)
+        state.pages.push_back({page, page->memory});
     return state;
 }
 
-void vexa::memory::restore_snapshot(vexa::mem_state ss)
+void vexa::memory::restore_snapshot(const vexa::mem_state &ss)
 {
-    unsigned int i;
-    for (i = 0; i < ss.pages.size(); i++)
-        *pages[i] = ss.pages[i];
-
-    if (pages.size() > ss.pages.size())
-        pages.erase(pages.begin() + ss.pages.size(), pages.end());
+    pages.resize(ss.pages.size());
+    for (size_t i = 0; i < ss.pages.size(); ++i) {
+        pages[i] = ss.pages[i].page;
+        pages[i]->memory = ss.pages[i].memory;
+    }
 }

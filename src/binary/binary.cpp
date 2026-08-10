@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <vexa/vexa.h>
 
 std::vector<uint8_t> vexa::binary::read_binary_file(const std::string &filename)
@@ -85,10 +86,17 @@ LIEF::PE::Binary *vexa::binary::as_pe() const
 
 void vexa::binary::write(std::string filename) const
 {
+    std::filesystem::remove(filename);
     if (is_elf())
         as_elf()->write(filename);
     else
         as_pe()->write(filename);
+
+    std::filesystem::permissions(
+        filename,
+        std::filesystem::perms::owner_exec | std::filesystem::perms::group_exec
+            | std::filesystem::perms::others_exec,
+        std::filesystem::perm_options::add);
 }
 
 LIEF::Binary *vexa::binary::lief() const

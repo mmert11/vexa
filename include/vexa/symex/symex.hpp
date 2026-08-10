@@ -3,14 +3,13 @@
 #include "../value/value.hpp"
 
 #include <deque>
-#include <llvm/IR/ValueMap.h>
-#include <map>
+#include <llvm/ADT/DenseMap.h>
 
 namespace vexa
 {
 struct symex_state
 {
-    std::unordered_map<llvm::Value *, vexa::value *> specialized_vars;
+    llvm::DenseMap<llvm::Value *, vexa::value *> specialized_vars;
     std::unordered_map<bw::Term, bw::Term> substitutions;
 };
 
@@ -39,8 +38,8 @@ class symex
     vexa::context *context;
     std::deque<vexa::value> values;
     std::deque<vexa::pointer> pointers;
-    std::unordered_map<llvm::Value *, vexa::value *> vars;
-    std::unordered_map<llvm::Value *, vexa::value *> specialized_vars;
+    llvm::DenseMap<llvm::Value *, vexa::value *> vars;
+    llvm::DenseMap<llvm::Value *, vexa::value *> specialized_vars;
     std::unordered_map<bw::Term, bw::Term> substitutions;
 };
 } // namespace vexa

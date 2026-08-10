@@ -51,7 +51,6 @@ void vexa::cpu::emulator::write_memory(vexa::pointer *addr, vexa::value *val)
         vexa::value *solved = symex->value(address);
         vexa::pointer *resolved = resolve(solved);
         auto page = resolved->get_page();
-        auto &contents = page->concrete_memory;
         uint64_t base = resolved->as_uint64();
         bw::Term condition = *addr == *solved;
 
@@ -62,12 +61,14 @@ void vexa::cpu::emulator::write_memory(vexa::pointer *addr, vexa::value *val)
                 context->term_manager.mk_bv_sort(8),
                 "noinit_" + std::to_string(reinterpret_cast<uintptr_t>(page.get())) + "_"
                     + std::to_string(byte_addr));
-            auto it = contents.find(byte_addr);
-            if (it != contents.end() && it->second)
-                old_byte = *it->second;
+            const std::optional<bw::Term> *stored = page->find(byte_addr);
+            if (stored && *stored)
+                old_byte = **stored;
 
-            contents[byte_addr] = context->bitwuzla->simplify(
-                context->term_manager.mk_term(bw::Kind::ITE, {condition, new_byte, old_byte}));
+            page->write(
+                byte_addr,
+                context->bitwuzla->simplify(
+                    context->term_manager.mk_term(bw::Kind::ITE, {condition, new_byte, old_byte})));
         }
     }
 }
@@ -164,28 +165,25 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
     builder->SetInsertPoint(default_block);
     builder->CreateUnreachable();
     builder->SetInsertPoint(source);
+    
     llvm::SwitchInst *dispatch =
         builder->CreateSwitch(call.getArgOperand(1), default_block, values.size());
-
-    //mem_state base_memory = memory->take_snapshot();
-    //symex_state base_symex = symex->take_snapshot();
-
     auto base_snapshot = cpu->take_snapshot(cpu->instruction.next_pc, cpu->block);
-    std::vector<bw::Term> base_constraints = cpu->path_constraints;
 
     auto execute = [&](size_t index) {
-        //memory->restore_snapshot(base_memory);
-        //symex->restore_snapshot(base_symex);
-
+        // reset state to the beginning 
+        //
         cpu->restore_snapshot(base_snapshot);
-        cpu->path_constraints = base_constraints;
 
+        // initialize for the execution
+        //
         const bw::Term &candidate = values[index];
         uint64_t concrete_address = vexa::value::as_uint64(candidate);
         llvm::BasicBlock *case_block = builder->basic_block(
             std::format("{}_{:x}", write ? "write" : "read", concrete_address));
         dispatch->addCase(llvm::ConstantInt::get(address_type, concrete_address), case_block);
 
+        // add to path constraints 
         cpu->path_constraints.push_back(
             context->term_manager.mk_term(bw::Kind::EQUAL, {address->as_expr(), candidate}));
         symex->specialize(address->as_expr(), candidate);
@@ -200,7 +198,7 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
                     page.l,
                     llvm::ConstantInt::get(address_type, concrete_address))
                 .to_ptr();
-        
+
         // memory write
         if (write)
             run(builder->CreateStore(call.getOperand(2), resolved.l));

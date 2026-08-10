@@ -63,6 +63,7 @@ class engine
     std::vector<uint8_t> fix_relocations(
         vexa::binary &object_file,
         std::vector<uint8_t> code_content,
+        const std::unordered_map<uint16_t, uint64_t> &section_offsets,
         uint64_t new_section_rva,
         uint64_t image_base,
         uint64_t shift_offset = 0);

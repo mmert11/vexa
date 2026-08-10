@@ -7,14 +7,15 @@ vexa::symex::symex(vexa::context *_context)
 vexa::value *vexa::symex::symbolic(std::string name, int size)
 {
     bw::Sort sort = term_manager->mk_bv_sort(size);
-    values.emplace_back(term_manager->mk_const(sort, std::move(name)), *term_manager, *solver);
+    values.emplace_back(context, term_manager->mk_const(sort, std::move(name)), *term_manager, *solver);
     return &values.back();
 }
 
 vexa::value *vexa::symex::concrete(uint64_t val, int size)
 {
     bw::Sort sort = term_manager->mk_bv_sort(size);
-    values.emplace_back(term_manager->mk_bv_value_uint64(sort, val), *term_manager, *solver);
+    values.emplace_back(
+        context, term_manager->mk_bv_value_uint64(sort, val), *term_manager, *solver);
     return &values.back();
 }
 
@@ -32,7 +33,7 @@ vexa::pointer *vexa::symex::pointer(uint64_t value, std::shared_ptr<vexa::mem_pa
 
 vexa::value *vexa::symex::value(bw::Term e)
 {
-    values.emplace_back(specialize(std::move(e)), *term_manager, *solver);
+    values.emplace_back(context, specialize(std::move(e)), *term_manager, *solver);
     return &values.back();
 }
 
@@ -46,16 +47,18 @@ vexa::value *vexa::symex::get(llvm::Value *v)
 
     auto it = vars.find(v);
     if (it != vars.end()) {
+        // specialized variables, these are not safe to concretize
+        //
         vexa::value *original = it->second;
         bw::Term term = specialize(original->as_expr());
         if (term == original->as_expr())
             return original;
 
-        values.emplace_back(std::move(term), *term_manager, *solver);
+        values.emplace_back(context, std::move(term), *term_manager, *solver);
         vexa::value *specialized = &values.back();
         if (auto *ptr = vexa::to_ptr(original))
             specialized = pointer(specialized, ptr->get_page());
-        specialized_vars.emplace(v, specialized);
+        specialized_vars.insert({v, specialized});
         return specialized;
     }
 
@@ -74,7 +77,8 @@ vexa::value *vexa::symex::get(llvm::Value *v)
 void vexa::symex::set(llvm::Value *v, vexa::value *e)
 {
     vars[v] = e;
-    specialized_vars.erase(v);
+    if (!specialized_vars.empty())
+        specialized_vars.erase(v);
 }
 
 void vexa::symex::clear()
@@ -113,9 +117,7 @@ bw::Term vexa::symex::specialize(bw::Term term)
 
 bool vexa::symex::is_sync(llvm::Value *v)
 {
-    if (vars.count(v))
-        return true;
-    return false;
+    return vars.contains(v);
 }
 
 vexa::symex_state vexa::symex::take_snapshot() const

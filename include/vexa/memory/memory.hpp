@@ -9,17 +9,57 @@ namespace vexa
 {
 struct mem_page
 {
-    mem_page(uint64_t size)
+    using storage_t = std::unordered_map<uint64_t, std::optional<bw::Term>>;
+
+    mem_page(uint64_t size) : memory(std::make_shared<storage_t>())
     {
         if (size > 0)
-            concrete_memory.reserve(size);
+            memory->reserve(size);
     }
-    std::unordered_map<uint64_t, std::optional<bw::Term>> concrete_memory;
+
+    const std::optional<bw::Term> *find(uint64_t address) const
+    {
+        auto it = memory->find(address);
+        if (it != memory->end())
+            return &it->second;
+        auto initial = initial_memory.find(address);
+        return initial == initial_memory.end() ? nullptr : &initial->second;
+    }
+
+    void initialize(uint64_t address, bw::Term value)
+    {
+        if (sealed) {
+            write(address, std::move(value));
+            return;
+        }
+        initial_memory.insert_or_assign(address, std::move(value));
+    }
+
+    void seal() { sealed = true; }
+
+    void write(uint64_t address, bw::Term value)
+    {
+        if (!memory.unique())
+            memory = std::make_shared<storage_t>(*memory);
+        memory->insert_or_assign(address, std::move(value));
+    }
+
+  private:
+    friend class memory;
+    storage_t initial_memory;
+    std::shared_ptr<storage_t> memory;
+    bool sealed = false;
 };
 
 struct mem_state
 {
-    std::vector<mem_page> pages;
+    struct page_state
+    {
+        std::shared_ptr<mem_page> page;
+        std::shared_ptr<mem_page::storage_t> memory;
+    };
+
+    std::vector<page_state> pages;
 };
 
 class memory
@@ -32,8 +72,8 @@ class memory
     void write(vexa::pointer *addr, vexa::value *val);
     vexa::value *read(vexa::pointer *addr, int size);
 
-    mem_state take_snapshot();
-    void restore_snapshot(mem_state ss);
+    mem_state take_snapshot() const;
+    void restore_snapshot(const mem_state &ss);
 
   private:
     vexa::context *context;

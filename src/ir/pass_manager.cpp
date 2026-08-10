@@ -92,4 +92,13 @@ void vexa::ir::pass_manager::run(llvm::Function *func)
         OrderedBlocks.push_back(BB);
     for (size_t i = 1; i < OrderedBlocks.size(); ++i)
         OrderedBlocks[i]->moveAfter(OrderedBlocks[i - 1]);
+
+    // strip ssa value names
+    for (auto &BB : *func) {
+        for (auto &I : BB)
+        {
+            if (!I.getType()->isPointerTy())
+                I.setName("");
+        }
+    }
 }

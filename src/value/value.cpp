@@ -8,7 +8,7 @@ std::vector<bw::Term>
     solved_values.reserve(20);
 
     bw::Result check = bw::Result::UNKNOWN;
-    while (solved_values.size() < 20) {
+    while (solved_values.size() < 50) {
         check = solver->check_sat(assumptions);
         if (check != bw::Result::SAT)
             break;
@@ -25,7 +25,10 @@ std::vector<bw::Term>
 
 vexa::value *vexa::value::simplify()
 {
-    term = solver->simplify(term);
+    if (!simplified) {
+        term = solver->simplify(term);
+        simplified = true;
+    }
     return this;
 }
 

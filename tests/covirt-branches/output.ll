@@ -139,26 +139,26 @@ MOVZX_GPR64_MEMw_388:                             ; preds = %entry
   store i64 54376, ptr %62, align 8
   %63 = getelementptr inbounds nuw i8, ptr %memory, i64 54346
   store i64 54386, ptr %63, align 8
-  %spec.select = zext i1 %59 to i64
+  %64 = zext i1 %59 to i64
   br label %common.ret
 
 common.ret:                                       ; preds = %MOVZX_GPR64_MEMw_388, %ADD_GPRv_IMMb_64_1058, %ADD_GPRv_IMMb_64_875
-  %RAX1233.sroa.0.0 = phi i64 [ 1, %ADD_GPRv_IMMb_64_1058 ], [ 1, %ADD_GPRv_IMMb_64_875 ], [ %spec.select, %MOVZX_GPR64_MEMw_388 ]
-  %64 = getelementptr inbounds nuw i8, ptr %memory, i64 61448
-  %65 = getelementptr inbounds nuw i8, ptr %memory, i64 61456
-  store i64 -9, ptr %64, align 8
-  store i64 -25, ptr %65, align 8
-  %66 = getelementptr inbounds nuw i8, ptr %memory, i64 54738
-  store i64 54770, ptr %66, align 8
-  %67 = getelementptr inbounds nuw i8, ptr %memory, i64 54746
-  store i64 54782, ptr %67, align 8
-  %68 = getelementptr inbounds nuw i8, ptr %memory, i64 54754
-  store i64 54795, ptr %68, align 8
-  %69 = getelementptr inbounds nuw i8, ptr %memory, i64 54762
-  store i64 54807, ptr %69, align 8
+  %65 = phi i64 [ 1, %ADD_GPRv_IMMb_64_1058 ], [ 1, %ADD_GPRv_IMMb_64_875 ], [ %64, %MOVZX_GPR64_MEMw_388 ]
+  %66 = getelementptr inbounds nuw i8, ptr %memory, i64 61448
+  %67 = getelementptr inbounds nuw i8, ptr %memory, i64 61456
+  store i64 -9, ptr %66, align 8
+  store i64 -25, ptr %67, align 8
+  %68 = getelementptr inbounds nuw i8, ptr %memory, i64 54738
+  store i64 54770, ptr %68, align 8
+  %69 = getelementptr inbounds nuw i8, ptr %memory, i64 54746
+  store i64 54782, ptr %69, align 8
+  %70 = getelementptr inbounds nuw i8, ptr %memory, i64 54754
+  store i64 54795, ptr %70, align 8
+  %71 = getelementptr inbounds nuw i8, ptr %memory, i64 54762
+  store i64 54807, ptr %71, align 8
   store i16 8624, ptr %2, align 2
-  %RAX1233.sroa.128.sroa.0.0.in = and i64 %0, -256
-  %RAX1233.sroa.0.0.insert.insert1670 = or disjoint i64 %RAX1233.sroa.0.0, %RAX1233.sroa.128.sroa.0.0.in
-  store i64 %RAX1233.sroa.0.0.insert.insert1670, ptr %RAX1249, align 8
+  %72 = and i64 %0, -256
+  %73 = or disjoint i64 %65, %72
+  store i64 %73, ptr %RAX1249, align 8
   ret ptr %state
 }

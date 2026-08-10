@@ -15,6 +15,7 @@
 #include <LIEF/Abstract/Symbol.hpp>
 #include <LIEF/ELF/Section.hpp>
 #include <LIEF/ELF/Segment.hpp>
+#include <LIEF/ELF/Symbol.hpp>
 #include <LIEF/Object.hpp>
 
 #include <quill/std/Chrono.h>
@@ -34,6 +35,7 @@ vexa::engine::engine(vexa::arch arch) : _arch(arch)
 void vexa::engine::run(uint64_t pc)
 {
     LOG_INFO(logger, "Started symbolic execution and lifting");
+    cpu->global_memory->seal();
 
     auto start = std::chrono::high_resolution_clock::now();
     cpu->run(pc);
@@ -121,8 +123,8 @@ void vexa::engine::write_memory(uint64_t address, std::span<const uint8_t> buffe
         memory->write(ptr, symex->concrete(buffer[i], 8));
         */
 
-        cpu->global_memory->concrete_memory[address + i] =
-            context->term_manager.mk_bv_value_uint64(byte_sort, buffer[i]);
+        cpu->global_memory->initialize(
+            address + i, context->term_manager.mk_bv_value_uint64(byte_sort, buffer[i]));
     }
 }
 
@@ -197,25 +199,37 @@ void vexa::engine::patch(vexa::binary &binary, std::vector<uint8_t> object_file,
     if (object->header().object_type() != LIEF::Header::OBJECT_TYPES::OBJECT)
         THROW("error while parsing object file");
 
-    // get the section
-    LIEF::Section *section = nullptr;
-    for (auto &s : object->sections()) {
-        if (s.name() == ".text") {
-            section = &s;
-            break;
-        }
-    }
-
-    if (!section)
+    auto *elf_object = object_f.as_elf();
+    auto *text_section = elf_object->get_section(".text");
+    if (!text_section)
         THROW(".text section is not found in the object file");
 
-    // read the section content
-    auto _code_content = section->content();
-    std::vector<uint8_t> code_content =
-        std::vector<uint8_t>(_code_content.begin(), _code_content.end());
+    std::vector<uint8_t> code_content;
+    std::unordered_map<uint16_t, uint64_t> section_offsets;
+    auto append_section = [&](const LIEF::ELF::Section &section) {
+        uint64_t alignment = std::max<uint64_t>(section.alignment(), 1);
+        code_content.insert(
+            code_content.end(), (alignment - code_content.size() % alignment) % alignment, 0);
+        auto section_idx = elf_object->get_section_idx(section);
+        VEXA_ASSERT(section_idx);
+        section_offsets.emplace(section_idx.value(), code_content.size());
+        if (section.type() == LIEF::ELF::Section::TYPE::NOBITS) {
+            code_content.resize(code_content.size() + section.size(), 0);
+            return;
+        }
+        auto content = section.content();
+        code_content.insert(code_content.end(), content.begin(), content.end());
+    };
+
+    append_section(*text_section);
+    for (auto &section : elf_object->sections()) {
+        if (&section == text_section || !section.has(LIEF::ELF::Section::FLAGS::ALLOC))
+            continue;
+        append_section(section);
+    }
 
     // get vexa_entry symbol
-    LIEF::Symbol *entry_symbol = object->get_symbol("vexa_entry");
+    auto *entry_symbol = dynamic_cast<LIEF::ELF::Symbol *>(object->get_symbol("vexa_entry"));
     if (!entry_symbol)
         THROW(
             "vexa_entry symbol is not found in the object file, make sure its "
@@ -235,10 +249,10 @@ void vexa::engine::patch(vexa::binary &binary, std::vector<uint8_t> object_file,
         vexa_segment.alignment(0x1000);
         vexa_segment.content(code_content);
 
-        // relocate the program header table manually with PHDR_RELOC::PIE_SHIFT
-        // method                                              │ so we dont let lief
-        // to decide to relocate the phdr or not │ this method shifts the whole
-        // binary with +0x1000 │ see
+        // relocate the program header table manually with PHDR_RELOC::PIE_SHIFT method
+        // so we dont let liefto decide to relocate the phdr or not
+        // this method shifts the whole binary with +0x1000
+        // see
         // https://github.com/lief-project/LIEF/blob/f986c6dd17b297cef88f8f1f8d1cdc987827e671/src/ELF/Binary.cpp#L2655
         // (only for PIE binaries)
         uint64_t shift_offset = 0;
@@ -254,13 +268,18 @@ void vexa::engine::patch(vexa::binary &binary, std::vector<uint8_t> object_file,
         LIEF::ELF::Segment *new_segment = elf->add(vexa_segment);
 
         std::vector<uint8_t> relocated = fix_relocations(
-            object_f, code_content, new_segment->virtual_address(), image_base, shift_offset);
+            object_f,
+            code_content,
+            section_offsets,
+            new_segment->virtual_address(),
+            image_base,
+            shift_offset);
 
         // update the binary with fixed relocations
         new_segment->content(relocated);
-
-        // calculate the address to create a relative jump
-        uint64_t new_func_va = new_segment->virtual_address() + entry_symbol->value();
+        uint64_t new_func_va = new_segment->virtual_address()
+                               + section_offsets.at(entry_symbol->section_idx())
+                               + entry_symbol->value();
         int32_t calc_relative = static_cast<int32_t>(new_func_va - (va + 5));
 
         std::vector<uint8_t> jmp_bytes = {0xE9};
@@ -285,16 +304,22 @@ void vexa::engine::patch(vexa::binary &binary, std::vector<uint8_t> object_file,
             static_cast<uint32_t>(LIEF::PE::Section::CHARACTERISTICS::CNT_CODE)
             | static_cast<uint32_t>(LIEF::PE::Section::CHARACTERISTICS::MEM_EXECUTE)
             | static_cast<uint32_t>(LIEF::PE::Section::CHARACTERISTICS::MEM_READ));
+
         LIEF::PE::Section *new_section =
             pe->add_section(vexa_section); // PE::virtual_address() actually returns RVA, not VA
+            
         std::vector<uint8_t> relocated = fix_relocations(
-            object_f, code_content, image_base + new_section->virtual_address(), image_base);
+            object_f,
+            code_content,
+            section_offsets,
+            image_base + new_section->virtual_address(),
+            image_base);
 
         // update the binary with fixed relocations
         new_section->content(relocated);
-
-        // calculate the address to create a relative jump
-        uint64_t new_func_va = image_base + new_section->virtual_address() + entry_symbol->value();
+        uint64_t new_func_va = image_base + new_section->virtual_address()
+                               + section_offsets.at(entry_symbol->section_idx())
+                               + entry_symbol->value();
         int32_t calc_relative = static_cast<int32_t>(new_func_va - (va + 5));
 
         std::vector<uint8_t> jmp_bytes = {0xE9};
@@ -313,6 +338,7 @@ void vexa::engine::patch(vexa::binary &binary, std::vector<uint8_t> object_file,
 std::vector<uint8_t> vexa::engine::fix_relocations(
     vexa::binary &object_file,
     std::vector<uint8_t> code_content,
+    const std::unordered_map<uint16_t, uint64_t> &section_offsets,
     uint64_t new_section_rva,
     uint64_t image_base,
     uint64_t shift_offset)
@@ -321,23 +347,30 @@ std::vector<uint8_t> vexa::engine::fix_relocations(
         THROW("unsupported binary type");
 
     for (auto &reloc : object_file.as_elf()->relocations()) {
-        if (!reloc.has_symbol())
+        if (!reloc.has_symbol() || !reloc.has_section())
             continue;
 
-        std::string &symbol_name = reloc.symbol()->name();
-        if (symbol_name.empty())
+        auto patch_section_idx = object_file.as_elf()->get_section_idx(*reloc.section());
+        if (!patch_section_idx)
+            continue;
+        auto patch_section = section_offsets.find(patch_section_idx.value());
+        if (patch_section == section_offsets.end())
             continue;
 
-        uint64_t symbol_va = 0;
-        if (symbol_name == "IMAGE_BASE") {
+        const auto *symbol = reloc.symbol();
+        uint64_t symbol_va;
+        if (symbol->name() == "IMAGE_BASE") {
             symbol_va = image_base + shift_offset;
         }
         else {
-            symbol_va = new_section_rva + reloc.symbol()->value();
+            auto symbol_section = section_offsets.find(symbol->section_idx());
+            if (symbol_section == section_offsets.end())
+                continue;
+            symbol_va = new_section_rva + symbol_section->second + symbol->value();
         }
 
-        uint64_t patch_offset = reloc.address();
-        uint64_t patch_va = new_section_rva + patch_offset; // virtual address of patch location
+        uint64_t patch_offset = patch_section->second + reloc.address();
+        uint64_t patch_va = new_section_rva + patch_offset;
 
         switch (reloc.type()) {
         case LIEF::ELF::Relocation::TYPE::X86_64_PC32:
@@ -353,14 +386,14 @@ std::vector<uint8_t> vexa::engine::fix_relocations(
             memcpy(&code_content[patch_offset], &absolute_va, 8);
             break;
         }
-        case LIEF::ELF::Relocation::TYPE::X86_64_32: {
-            // absolute 32
+        case LIEF::ELF::Relocation::TYPE::X86_64_32:
+        case LIEF::ELF::Relocation::TYPE::X86_64_32S: {
             uint32_t absolute_va_32 = static_cast<uint32_t>(symbol_va + reloc.addend());
             memcpy(&code_content[patch_offset], &absolute_va_32, 4);
             break;
         }
         default:
-            THROW("unsupported relocation type {}", std::to_string((uint64_t)reloc.type()));
+            THROW("Unsupported relocation type {}", std::to_string((uint64_t)reloc.type()));
         }
     }
 

@@ -16,7 +16,7 @@
 #include <format>
 
 std::vector<uint8_t>
-vexa::ir::builder::recompile(vexa::arch arch, llvm::Function *func, bool optimize)
+    vexa::ir::builder::recompile(vexa::arch arch, llvm::Function *func, bool optimize)
 {
     LLVMInitializeX86TargetInfo();
     LLVMInitializeX86Target();
@@ -140,7 +140,7 @@ vexa::ir::builder::recompile(vexa::arch arch, llvm::Function *func, bool optimiz
     VEXA_ASSERT(Target);
 
     llvm::TargetOptions opt;
-    llvm::Reloc::Model RM = llvm::Reloc::Model::Static;
+    llvm::Reloc::Model RM = llvm::Reloc::Model::PIC_;
     std::unique_ptr<llvm::TargetMachine> TM(Target->createTargetMachine(
         T,
         "generic",

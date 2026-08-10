@@ -10,6 +10,7 @@ namespace bw = bitwuzla;
 
 namespace vexa
 {
+class context;
 template <typename To, typename From> To *dyn_cast(From *Val)
 {
     return To::classof(Val) ? static_cast<To *>(Val) : nullptr;
@@ -26,10 +27,19 @@ class value
         pointer
     };
 
-    value() : _kind(kind::value), term_manager(nullptr), solver(nullptr) {}
-    value(kind k) : _kind(k), term_manager(nullptr), solver(nullptr) {}
-    value(bw::Term e, bw::TermManager &tm, bw::Bitwuzla &bzla)
-        : _kind(kind::value), term(std::move(e)), term_manager(&tm), solver(&bzla)
+    value(vexa::context *c)
+        : context(c), _kind(kind::value), term_manager(nullptr), solver(nullptr), simplified(true)
+    {}
+    value(vexa::context *c, kind k)
+        : context(c), _kind(k), term_manager(nullptr), solver(nullptr), simplified(true)
+    {}
+    value(vexa::context *c, bw::Term e, bw::TermManager &tm, bw::Bitwuzla &bzla)
+        : context(c),
+          _kind(kind::value),
+          term(std::move(e)),
+          term_manager(&tm),
+          solver(&bzla),
+          simplified(term.is_value())
     {}
 
     std::vector<bw::Term>
@@ -80,22 +90,29 @@ class value
 
   protected:
     value(const value &other, kind k)
-        : _kind(k), term(other.term), term_manager(other.term_manager), solver(other.solver)
+        : context(other.context),
+          _kind(k),
+          term(other.term),
+          term_manager(other.term_manager),
+          solver(other.solver),
+          simplified(other.simplified)
     {}
 
   private:
     bw::Term unary(bw::Kind op) const;
     bw::Term binary(bw::Kind op, const value &rhs) const;
+    vexa::context *context;
     const kind _kind;
     bw::Term term;
     bw::TermManager *term_manager;
     bw::Bitwuzla *solver;
+    bool simplified;
 };
 
 class pointer : public value
 {
   public:
-    pointer() : value(kind::pointer) {}
+    pointer(vexa::context* c) : value(c, kind::pointer) {}
     pointer(const vexa::value &v, std::shared_ptr<mem_page> p)
         : value(v, kind::pointer), page(std::move(p))
     {}

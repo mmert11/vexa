@@ -128,7 +128,8 @@ class cpu
     vexa::dual_value get_condition(llvm::BasicBlock *BB);
     bool opaque_solver(vexa::value *condition, bool &result);
     snapshot take_snapshot(uint64_t pc, llvm::BasicBlock *bb);
-    void restore_snapshot(snapshot ss);
+    void restore_snapshot(const snapshot &ss);
+    void restore_snapshot(snapshot &&ss);
     remill::Register *get_register(reg_t r);
     virtual remill::Register *get_return_register() = 0;
     vexa::value *read_register(reg_t r);
