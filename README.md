@@ -503,13 +503,40 @@ For now:
   - Bugs are always expected, and I always welcome the reports, especially with solutions.
 
 ## Conclusion
-I think VEXA has a great potential. This is why I'm releasing it as open source. I'm not a professional and making these only out of personal interest. So I appreciate every kind of help coming from the community.
+VEXA might not be ready for real world samples yet, but I think it has a great potential. This is why I'm releasing it as open source. I'm not a professional and making these only out of personal interest. So I appreciate every kind of help coming from the community.
 
-## Building
+# Building
 ***VEXA uses [a modified version of remill](https://github.com/mmert11/remill), original repo wont work!***
 
 VEXA uses xmake for building. Follow the steps for building it.
 
+## Linux
+### Install requirements
+```bash
+sudo apt install build-essential cmake ninja-build python3 python3-pip pkg-config libgmp-dev libmpfr-dev git curl meson 7zip
+```
+### Build and install LLVM 22+
+```bash
+git clone --branch llvmorg-22.1.6 --depth 1 https://github.com/llvm/llvm-project.git
+cd llvm-project
+cmake -S llvm -B build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX=/usr/local \
+  -DLLVM_ENABLE_PROJECTS="clang" \
+  -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM;Sparc" \
+  -DLLVM_ENABLE_RTTI=ON \
+  -DLLVM_ENABLE_ASSERTIONS=OFF
+cmake --build build -j$(nproc)
+cmake --install build
+```
+### Get xmake
+```bash
+curl -fsSL https://xmake.io/shget.text | bash
+source ~/.xmake/profile
+```
+### Build VEXA
 ```bash
 git clone https://github.com/mmert11/vexa.git --recursive
+cd vexa
+xmake -j8
 ```
