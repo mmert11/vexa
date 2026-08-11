@@ -22,88 +22,12 @@ void vexa::cpu::emulator::run_block(llvm::BasicBlock *BB)
 }
 void vexa::cpu::emulator::write_memory(vexa::pointer *addr, vexa::value *val)
 {
-    addr->simplify();
-    if (addr->is_concrete()) {
-        memory->write(addr, val);
-        return;
-    }
-
-    // symbolic write
-    std::vector<bw::Term> possible_values = addr->possible_values(cpu->path_constraints);
-    auto resolve = [&](vexa::value *address) {
-        vexa::pointer *resolved = vexa::to_ptr(cpu->calculate_pointer(address));
-        VEXA_ASSERT(resolved);
-        return resolved;
-    };
-
-    // address has resolved to a single concrete value
-    //
-    if (possible_values.size() == 1) {
-        memory->write(resolve(symex->value(possible_values.front())), val);
-        return;
-    }
-
-    // address has multiple possible values
-    // create ite for each possible address and write on it
-    //
-    int byte_size = val->size() / 8;
-    for (const bw::Term &address : possible_values) {
-        vexa::value *solved = symex->value(address);
-        vexa::pointer *resolved = resolve(solved);
-        auto page = resolved->get_page();
-        uint64_t base = resolved->as_uint64();
-        bw::Term condition = *addr == *solved;
-
-        for (int i = 0; i < byte_size; i++) {
-            uint64_t byte_addr = base + i;
-            bw::Term new_byte = val->extract(i * 8 + 7, i * 8);
-            bw::Term old_byte = context->term_manager.mk_const(
-                context->term_manager.mk_bv_sort(8),
-                "noinit_" + std::to_string(reinterpret_cast<uintptr_t>(page.get())) + "_"
-                    + std::to_string(byte_addr));
-            const std::optional<bw::Term> *stored = page->find(byte_addr);
-            if (stored && *stored)
-                old_byte = **stored;
-
-            page->write(
-                byte_addr,
-                context->bitwuzla->simplify(
-                    context->term_manager.mk_term(bw::Kind::ITE, {condition, new_byte, old_byte})));
-        }
-    }
+    memory->write(addr, val);
 }
 
 vexa::value *vexa::cpu::emulator::read_memory(vexa::pointer *addr, int size)
 {
-    addr->simplify();
-    if (addr->is_concrete())
-        return memory->read(addr, size);
-
-    // symbolic address read
-    std::vector<bw::Term> possible_values = addr->possible_values(cpu->path_constraints);
-    auto resolve = [&](vexa::value *address) {
-        vexa::pointer *resolved = vexa::to_ptr(cpu->calculate_pointer(address));
-        VEXA_ASSERT(resolved);
-        return resolved;
-    };
-
-    // address has resolved to a single concrete value
-    //
-    if (possible_values.size() == 1)
-        return memory->read(resolve(symex->value(possible_values.front())), size);
-
-    // address has multiple possible values
-    // combine every possibility in an array of ite
-    //
-    bw::Term value = symex->concrete(0, size)->as_expr();
-    for (const bw::Term &address : possible_values) {
-        vexa::value *solved = symex->value(address);
-        vexa::value *read = memory->read(resolve(solved), size);
-        value = context->term_manager.mk_term(
-            bw::Kind::ITE, {*addr == *solved, read->as_expr(), value});
-    }
-
-    return symex->value(value);
+    return memory->read(addr, size);
 }
 
 llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
@@ -293,8 +217,7 @@ llvm::BasicBlock *vexa::cpu::emulator::read_memory_intrinsic(llvm::CallInst &cal
     VEXA_ASSERT(ptr_sym);
 
     // create actual load
-    auto *load = builder->CreateLoad(builder->getIntNTy(size), ptr.l);
-    symex->set(load, read_memory(ptr_sym, size));
+    auto *load = run(builder->CreateLoad(builder->getIntNTy(size), ptr.l)).l;
     call.replaceAllUsesWith(load);
     return nullptr;
 }

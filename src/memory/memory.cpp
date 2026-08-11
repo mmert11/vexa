@@ -14,18 +14,20 @@ std::shared_ptr<vexa::mem_page> vexa::memory::allocate(uint64_t size)
 void vexa::memory::write(vexa::pointer *addr, vexa::value *val)
 {
     addr->simplify();
-    VEXA_ASSERT(addr->is_concrete());
 
     // concrete write
     auto page = addr->get_page();
-    uint64_t base = addr->as_uint64();
-    int byte_size = val->size() / 8;
 
-    for (int i = 0; i < byte_size; i++) {
-        bw::Term byte = val->extract(i * 8 + 7, i * 8);
-        if (!byte.is_value())
-            byte = context->bitwuzla->simplify(byte);
-        page->write(base + i, std::move(byte));
+    if (addr->is_concrete()) {
+        uint64_t base = addr->as_uint64();
+        int byte_size = val->size() / 8;
+
+        for (int i = 0; i < byte_size; i++) {
+            bw::Term byte = val->extract(i * 8 + 7, i * 8);
+            if (!byte.is_value())
+                byte = context->bitwuzla->simplify(byte);
+            page->write(base + i, std::move(byte));
+        }
     }
 }
 
@@ -33,7 +35,6 @@ void vexa::memory::write(vexa::pointer *addr, vexa::value *val)
 vexa::value *vexa::memory::read(vexa::pointer *addr, int size)
 {
     addr->simplify();
-    VEXA_ASSERT(addr->is_concrete());
 
     // helper
     auto page = addr->get_page();
@@ -48,18 +49,24 @@ vexa::value *vexa::memory::read(vexa::pointer *addr, int size)
                 + std::to_string(address));
     };
 
-    // concrete address read
-    //
-    uint64_t base = addr->as_uint64();
-    int byte_size = size / 8;
-    bw::Term value = read_byte(base + byte_size - 1);
+    if (addr->is_concrete()) {
+        uint64_t base = addr->as_uint64();
+        int byte_size = size / 8;
+        bw::Term value = read_byte(base + byte_size - 1);
 
-    for (int i = byte_size - 2; i >= 0; i--)
-        value = context->term_manager.mk_term(bw::Kind::BV_CONCAT, {value, read_byte(base + i)});
+        for (int i = byte_size - 2; i >= 0; i--)
+            value =
+                context->term_manager.mk_term(bw::Kind::BV_CONCAT, {value, read_byte(base + i)});
 
-    if (!value.is_value())
-        value = context->bitwuzla->simplify(value);
-    return context->symex->value(std::move(value));
+        if (!value.is_value())
+            value = context->bitwuzla->simplify(value);
+
+        return context->symex->value(std::move(value));
+    }
+    else {
+        return context->symex->symbolic(
+            "read_" + std::to_string(std::hash<bw::Term>{}(addr->as_expr())), size);
+    }
 }
 
 vexa::mem_state vexa::memory::take_snapshot() const

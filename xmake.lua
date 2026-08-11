@@ -27,6 +27,10 @@ target("vexa")
         os.cp(target:targetfile(), path.join(target:installdir(), "lib"))
     end)
 
+    set_optimize("fastest")
+    set_symbols("debug")
+    set_strip("none")
+
 target("vexa-cli")
     set_kind("binary")
     set_languages("c++20")
@@ -34,6 +38,10 @@ target("vexa-cli")
 
     configure_vexa_consumer()
     add_packages("cli11")
+
+    set_optimize("fastest")
+    set_symbols("debug")
+    set_strip("none")
 
 after_build(function (target)
     import("core.project.task")

@@ -8,7 +8,7 @@ std::vector<bw::Term>
     solved_values.reserve(20);
 
     bw::Result check = bw::Result::UNKNOWN;
-    while (solved_values.size() < 50) {
+    while (solved_values.size() < 20) {
         check = solver->check_sat(assumptions);
         if (check != bw::Result::SAT)
             break;
@@ -17,6 +17,8 @@ std::vector<bw::Term>
         assumptions.push_back(term_manager->mk_term(bw::Kind::DISTINCT, {term, evaluated}));
         solved_values.push_back(std::move(evaluated));
     }
+
+    check = solver->check_sat(assumptions);
 
     if (result)
         *result = check;
