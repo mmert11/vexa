@@ -495,6 +495,7 @@ common.ret:                                       ; preds = %entry, %entry, %ent
 
 ## Limitations
 For now:
+  - Flexibility is the main issue. Samples in the wild will need lots of modifications in the lifting process. API is not flexible enough.
   - Lifting API calls are not supported.
   - Virtual stack is a problem against optimizing the IR.
   - [Constant Propagation Pass](src/passes/constant_propagation_memory.cpp) still can fail on some edge-case samples.
