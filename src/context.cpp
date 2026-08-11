@@ -1,6 +1,6 @@
 #include <vexa/vexa.h>
 
-vexa::context::context(std::shared_ptr<vexa::engine> _engine, vexa::arch _arch)
+vexa::context::context(vexa::engine *_engine, vexa::arch _arch)
 {
     llvm_context = std::make_unique<llvm::LLVMContext>();
 

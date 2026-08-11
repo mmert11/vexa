@@ -2,7 +2,7 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="resources/logo_dark.png">
     <source media="(prefers-color-scheme: light)" srcset="resources/logo_light.png">
-    <img src="resources/logo-light.png" width="400" height="200" alt="VEXA">
+    <img src="resources/logo_light.png" width="400" height="200" alt="VEXA">
   </picture>
 </p>
 
@@ -157,7 +157,7 @@ void main(long state)
 ## Covirt branches
 I will cover the rest of the examples as quick as possible, cause otherwise it will be too long.
 
-This sample is classical multiple path forking example.
+This sample is classic multiple path forking example.
 
 [Binary](tests/covirt-branches/covirt_branches.covirt)
 
@@ -495,7 +495,7 @@ common.ret:                                       ; preds = %entry, %entry, %ent
 
 ## Limitations
 For now:
-  - No API calls are supported.
+  - Lifting API calls are not supported.
   - Virtual stack is a problem against optimizing the IR.
   - [Constant Propagation Pass](src/passes/constant_propagation_memory.cpp) still can fail on some edge-case samples.
   - Not tested on samples with try-catch
@@ -521,7 +521,6 @@ git clone --branch llvmorg-22.1.6 --depth 1 https://github.com/llvm/llvm-project
 cd llvm-project
 cmake -S llvm -B build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX=/usr/local \
   -DLLVM_ENABLE_PROJECTS="clang" \
   -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM;Sparc" \
   -DLLVM_ENABLE_RTTI=ON \

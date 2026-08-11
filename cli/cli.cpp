@@ -52,13 +52,13 @@ int main(int argc, char **argv)
         cli.add_option(
                "-r,--recompile",
                output_file,
-               "Output path for recompiling the lifted IR (default: 'recompiled')")
+               "Output path for recompiling the lifted IR back into a new binary (default: 'output.bin')")
             ->expected(0, 1);
+
+    CLI11_PARSE(cli, argc, argv);
 
     if (cfg_recovery && vcfg_recovery)
         return -1;
-
-    CLI11_PARSE(cli, argc, argv);
 
     if (output_file.empty())
         output_file = "output.bin";

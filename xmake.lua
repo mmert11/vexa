@@ -110,16 +110,17 @@ target("vexa")
     set_kind("static")
     set_languages("c++20")
     add_rules("utils.install.cmake_importfiles")
+    add_rules("utils.install.pkgconfig_importfiles")
     add_files("src/*.cpp", "src/**/*.cpp")
     add_includedirs("include", {public = true})
     add_packages("llvm", "bitwuzla", "lief", "quill", "remill")
 
     -- install options
     set_languages("c++20")
-    on_install(function (target)
-        os.cp("include/*", path.join(target:installdir(), "include"))
-        os.cp(target:targetfile(), path.join(target:installdir(), "lib"))
-    end)
+    add_headerfiles(
+        "include/(vexa/**.h)",
+        "include/(vexa/**.hpp)"
+    )
 
     --set_symbols("debug")
     --set_strip("none")

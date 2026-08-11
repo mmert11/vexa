@@ -116,8 +116,8 @@ using event_callback_t = std::function<void(vexa::engine &)>;
 class context
 {
   public:
-    context(std::shared_ptr<vexa::engine> engine, vexa::arch _arch);
-    std::shared_ptr<vexa::engine> engine;
+    context(vexa::engine *engine, vexa::arch _arch);
+    vexa::engine* engine;
     std::shared_ptr<vexa::cpu> cpu;
     std::shared_ptr<vexa::memory> memory;
     std::shared_ptr<vexa::symex> symex;

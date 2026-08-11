@@ -23,7 +23,7 @@
 vexa::engine::engine(vexa::arch arch) : _arch(arch)
 {
     // init modules (cpu, memory, builder etc.)
-    context = new vexa::context(std::shared_ptr<vexa::engine>(this), _arch);
+    context = new vexa::context(this, _arch);
     memory = context->memory;
     symex = context->symex;
     builder = context->builder;
@@ -320,7 +320,7 @@ void vexa::engine::patch(vexa::binary &binary, std::vector<uint8_t> object_file,
 
         LIEF::PE::Section *new_section =
             pe->add_section(vexa_section); // PE::virtual_address() actually returns RVA, not VA
-            
+
         std::vector<uint8_t> relocated = fix_relocations(
             object_f,
             code_content,
@@ -420,7 +420,8 @@ void vexa::engine::set_callback(vexa::event_kind kind, vexa::event_callback_t ca
 
 void vexa::engine::reset()
 {
-    context = new vexa::context(std::shared_ptr<vexa::engine>(this), _arch);
+    delete context;
+    context = new vexa::context(this, _arch);
     memory = context->memory;
     symex = context->symex;
     builder = context->builder;
