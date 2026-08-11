@@ -98,7 +98,7 @@ Of course that was the least we can do. We have some advanced examples here to s
 - [VMProtect 3.3.1 branches ultra](#vmprotect-331-branches-ultra)
 - [VMProtect 3.8.1 branches ultra](#vmprotect-381-branches-ultra)
 - [Binaryshield](#binaryshield)
-- Tigress
+- Tigress (soon)
 
 ## Covirt linear
 [Covirt](https://github.com/dmaivel/covirt) is a bin2bin code virtualizer with self-modifying code and mixed-boolean arithmetic obfuscations. It is a good studying example for developing a tool like VEXA. So I made the most of it. 
@@ -324,13 +324,14 @@ engine.set_option(vexa::option::MODE, vexa::mode_t::VCFG_RECOVERY);
 With this, we are able to rebuild the virtual CFG and recompiled binary works. But the thing is, VEXA still struggles with loops generally. Erasing virtual stack stores is not enough for this one. Take a look at [output.ll](tests/covirt-symbolic-loop/output.ll) and you will see what I mean. I'm not sure how to make this better but it will stay as a limitation for now.
 
 ## Covirt ranged loop
-The approach above has a edge-case, ranged loops.
+The approach above has an edge-case, ranged loops.
 
+Normally, we are able to solve this loop:
 ```cpp
 for (int i = 0; i < symbolic_var; i++)
   x += i;
 ```
-Normally, we are able to solve this loop, but when it comes to this:
+But when it comes to this, it fails.
 ```cpp
 for (int i = 0; i < 16; i++)
   x += i;
@@ -490,4 +491,25 @@ common.ret:                                       ; preds = %entry, %entry, %ent
   store i64 %2, ptr %RAX51272, align 8
   ret ptr %state
 }
+```
+
+## Limitations
+For now:
+  - No API calls are supported.
+  - Virtual stack is a problem against optimizing the IR.
+  - [Constant Propagation Pass](src/passes/constant_propagation_memory.cpp) still can fail on some edge-case samples.
+  - Not tested on samples with try-catch
+  - We support switch-cases but not tested it thoroughly.
+  - Bugs are always expected, and I always welcome the reports, especially with solutions.
+
+## Conclusion
+I think VEXA has a great potential. This is why I'm releasing it as open source. I'm not a professional and making these only out of personal interest. So I appreciate every kind of help coming from the community.
+
+## Building
+***VEXA uses [a modified version of remill](https://github.com/mmert11/remill), original repo wont work!***
+
+VEXA uses xmake for building. Follow the steps for building it.
+
+```bash
+git clone https://github.com/mmert11/vexa.git --recursive
 ```

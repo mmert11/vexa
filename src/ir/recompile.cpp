@@ -89,6 +89,11 @@ std::vector<uint8_t>
     vexa::global base = global_var(getInt8Ty(), "IMAGE_BASE");
     inlineasm.append("lea rdx, [rip + " + base.name() + "]\n");
 
+    // init fsbase
+    auto *fsbase = cpu->registers[amd64::FSBASE];
+    inlineasm.append("rdfsbase rax\n");
+    inlineasm.append(std::format("mov qword ptr [rsp + {}], rax\n", fsbase->offset));
+
     // function call
     //
     inlineasm.append("call " + func->getName().str() + "\n");

@@ -161,8 +161,21 @@ void vexa::engine::map_binary(vexa::binary &binary)
         for (const LIEF::ELF::Segment &segment : elf_binary->segments()) {
             uint64_t v_size = segment.virtual_size();
             uint64_t v_addr = segment.virtual_address();
+            auto content = segment.content();
+            int size = content.size();
 
-            write_memory(v_addr, segment.content());
+            write_memory(v_addr, content);
+
+            // ELF requires p_filesz, p_memsz to be initialized to zero
+            //
+            if (v_size <= size)
+                continue;
+
+            const bw::Sort byte_sort = context->term_manager.mk_bv_sort(8);
+            const bw::Term zero = context->term_manager.mk_bv_zero(byte_sort);
+
+            for (uint64_t offset = size; offset < v_size; ++offset)
+                cpu->global_memory->initialize(v_addr + offset, zero);
         }
     }
     else if (binary.is_pe()) {

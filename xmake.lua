@@ -1,12 +1,12 @@
 set_project("vexa")
-set_version("1.3")
+set_version("1.4")
 
 add_rules("mode.debug", "mode.release")
 add_requires("llvm", "bitwuzla", "lief", "quill", "cli11")
 
 option("remill")
 	-- !!!!!!!!!!!!!!!!!!!!!!!!!!
-    set_default(path.join(os.projectdir(), "..", "remill"))
+    set_default(path.join(os.projectdir(), "external", "remill"))
     set_showmenu(true)
     set_description("remill path")
 
@@ -27,7 +27,6 @@ target("vexa")
         os.cp(target:targetfile(), path.join(target:installdir(), "lib"))
     end)
 
-    set_optimize("fastest")
     set_symbols("debug")
     set_strip("none")
 
@@ -39,7 +38,6 @@ target("vexa-cli")
     configure_vexa_consumer()
     add_packages("cli11")
 
-    set_optimize("fastest")
     set_symbols("debug")
     set_strip("none")
 

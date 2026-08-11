@@ -61,7 +61,7 @@ int main(int argc, char **argv)
     CLI11_PARSE(cli, argc, argv);
 
     if (output_file.empty())
-        output_file = "recompiled";
+        output_file = "output.bin";
 
     vexa::init(quiet ? vexa::logging_mode::NONE : vexa::logging_mode::DEBUG);
 
@@ -91,6 +91,7 @@ int main(int argc, char **argv)
     auto cpu = engine.get_cpu();
     auto symex = engine.get_symex();
 
+
     engine.run(address);
     if (!no_opt)
         engine.optimize();
@@ -108,7 +109,7 @@ int main(int argc, char **argv)
         // out.close();
 
         engine.patch(bin, recompiled, address);
-        bin.write("output.bin");
+        bin.write(output_file);
     }
 
     return 0;
