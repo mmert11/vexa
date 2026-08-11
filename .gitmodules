@@ -1,3 +1,6 @@
 [submodule "external/remill"]
 	path = external/remill
 	url = https://github.com/mmert11/remill.git
+[submodule "external/bitwuzla"]
+	path = external/bitwuzla
+	url = https://github.com/bitwuzla/bitwuzla
