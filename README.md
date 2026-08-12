@@ -21,19 +21,27 @@ The code below shows an example how to load a binary and lift the function with 
 
 int main()
 {
-	// initialize
-	vexa::init();
-	vexa::engine engine;
+  // initialize
+  vexa::init();
+  vexa::engine engine;
 
-	// load and map binary
-	vexa::binary bin("example.bin");
-	engine.map_binary(bin);
+  // load and map binary
+  vexa::binary bin("example.bin");
+  engine.map_binary(bin);
 
-	// explore and lift until recovering the function at 0x140001000
-	engine.run(0x140001000);
+  // explore and lift until recovering the function at 0x140001000
+  engine.run(0x140001000);
 
-	// apply optimizations
-	engine.optimize();
+  // apply optimizations
+  engine.optimize();
+
+  // print the lifted IR with statistics
+  engine.print();
+
+  // recompile the IR and insert in a new binary
+  std::vector<uint8_t> recompiled = engine.recompile();
+  engine.patch(bin, recompiled, address);
+  bin.write(output_file);
 }
 ```
 ## Example
@@ -498,16 +506,18 @@ For now:
   - Flexibility is the main issue. Samples in the wild will need lots of modifications in the lifting process. API is not flexible enough.
   - Lifting API calls are not supported.
   - Virtual stack is a problem against optimizing the IR.
+  - Need a better memory model, for now vexa constant folding global variables that normally shouldn't.
   - [Constant Propagation Pass](src/passes/constant_propagation_memory.cpp) still can fail on some edge-case samples.
   - Not tested on samples with try-catch
   - We support switch-cases but not tested it thoroughly.
+  - I'm not sure if windows build is possible, bitwuzla and remill relies on different compilers in windows.
   - Bugs are always expected, and I always welcome the reports, especially with solutions.
 
 ## Conclusion
 VEXA might not be ready for real world samples yet, but I think it has a great potential. This is why I'm releasing it as open source. I'm not a professional and making these only out of personal interest. So I appreciate every kind of help coming from the community.
 
 # Building
-***VEXA uses [a modified version of remill](https://github.com/mmert11/remill), original repo wont work!***
+***VEXA uses [a modified version of remill](https://github.com/mmert11/remill), original repo wont work! Just clone the repo with --recursive.***
 
 VEXA uses xmake for building. Follow the steps for building it.
 

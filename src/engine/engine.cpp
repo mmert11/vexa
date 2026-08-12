@@ -105,7 +105,7 @@ void vexa::engine::print()
               << std::setprecision(2) << reduction << "%)\n";
 
     std::cout << "\n────────────────────────────────────────\n";
-    std::cout << "VEXA · LLVM IR Lifter / Deobfuscator © github.com/mmert11\n\n";
+    std::cout << "https://github.com/mmert11/vexa\n\n";
 }
 
 std::vector<uint8_t> vexa::engine::recompile(bool optimize)
@@ -114,7 +114,7 @@ std::vector<uint8_t> vexa::engine::recompile(bool optimize)
 }
 
 void vexa::engine::write_memory(uint64_t address, std::span<const uint8_t> buffer)
-{
+{   
     bw::Sort byte_sort = context->term_manager.mk_bv_sort(8);
     for (unsigned int i = 0; i < buffer.size(); i++) {
         /*
@@ -223,13 +223,16 @@ void vexa::engine::patch(vexa::binary &binary, std::vector<uint8_t> object_file,
         uint64_t alignment = std::max<uint64_t>(section.alignment(), 1);
         code_content.insert(
             code_content.end(), (alignment - code_content.size() % alignment) % alignment, 0);
+
         auto section_idx = elf_object->get_section_idx(section);
         VEXA_ASSERT(section_idx);
+
         section_offsets.emplace(section_idx.value(), code_content.size());
         if (section.type() == LIEF::ELF::Section::TYPE::NOBITS) {
             code_content.resize(code_content.size() + section.size(), 0);
             return;
         }
+
         auto content = section.content();
         code_content.insert(code_content.end(), content.begin(), content.end());
     };

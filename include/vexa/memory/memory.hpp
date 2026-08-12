@@ -47,6 +47,9 @@ struct mem_page
     friend class memory;
     storage_t initial_memory;
     std::shared_ptr<storage_t> memory;
+
+    
+
     bool sealed = false;
 };
 

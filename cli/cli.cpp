@@ -91,7 +91,6 @@ int main(int argc, char **argv)
     auto cpu = engine.get_cpu();
     auto symex = engine.get_symex();
 
-
     engine.run(address);
     if (!no_opt)
         engine.optimize();
