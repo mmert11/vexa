@@ -26,16 +26,18 @@ package("remill")
         "-DCMAKE_PREFIX_PATH=" .. depsinstall
     }
 
-    if package:is_plat("windows") then
-        table.insert(deps_args, "-DCMAKE_C_COMPILER=clang-cl")
-        table.insert(deps_args, "-DCMAKE_CXX_COMPILER=clang-cl")
+    --if package:is_plat("windows") then
+    --    table.insert(deps_args, "-DCMAKE_C_COMPILER=clang-cl")
+    --    table.insert(deps_args, "-DCMAKE_CXX_COMPILER=clang-cl")
 
-        table.insert(remill_args, "-DCMAKE_C_COMPILER=clang-cl")
-        table.insert(remill_args, "-DCMAKE_CXX_COMPILER=clang-cl")
-    else
-        table.insert(deps_args, "-DUSE_EXTERNAL_LLVM=ON")
-    end
+    --    table.insert(remill_args, "-DCMAKE_C_COMPILER=clang-cl")
+    --    table.insert(remill_args, "-DCMAKE_CXX_COMPILER=clang-cl")
+    --else
+    --    table.insert(deps_args, "-DUSE_EXTERNAL_LLVM=ON")
+    --end
 
+    table.insert(deps_args, "-DUSE_EXTERNAL_LLVM=ON")
+    
     os.vrunv("cmake", deps_args)
     os.vrunv("cmake", {"--build", depsbuild})
 

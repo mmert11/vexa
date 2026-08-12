@@ -431,6 +431,11 @@ void vexa::engine::reset()
     cpu = context->cpu;
 }
 
+vexa::engine::~engine()
+{
+    delete context;
+}
+
 void vexa::engine::set_option(vexa::option opt, int v)
 {
     context->set_option(opt, v);

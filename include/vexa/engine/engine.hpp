@@ -15,6 +15,7 @@ class engine
 {
   public:
     engine(vexa::arch arch = vexa::arch::x86_64);
+    ~engine();
     vexa::context *get_context();
     std::shared_ptr<vexa::ir::builder> get_builder();
     std::shared_ptr<vexa::memory> get_memory();
