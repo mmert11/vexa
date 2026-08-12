@@ -524,7 +524,7 @@ VEXA uses xmake for building. Follow the steps for building it.
 ## Linux
 ### Install requirements
 ```bash
-sudo apt install build-essential cmake ninja-build python3 python3-pip pkg-config libgmp-dev libmpfr-dev git curl meson 7zip
+sudo apt install build-essential cmake ninja-build python3 python3-pip pkg-config libgmp-dev libmpfr-dev git curl meson 7zip libzstd-dev libtinfo-dev libxml2-dev zlib1g-dev
 ```
 ### Build and install LLVM 22+
 ```bash
