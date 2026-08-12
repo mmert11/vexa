@@ -64,5 +64,6 @@ int main()
     return std::stoi(result.output) != 7503;
 #endif
 
+    delete_file("output.bin");
     return 0;
 }

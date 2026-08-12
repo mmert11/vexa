@@ -35,5 +35,6 @@ int main()
     return result.exit_code;
 #endif
 
+    delete_file("output.bin");
     return 0;
 }

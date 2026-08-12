@@ -73,5 +73,6 @@ int main()
     return !result;
 #endif
 
+    delete_file(output_bin);
     return 0;
 }

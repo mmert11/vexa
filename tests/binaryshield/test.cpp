@@ -51,6 +51,7 @@ int main()
         return !result;
     }
 
+
 #else
 
     int result = run_command("echo \"1859\" | " + output_bin).output.find("Correct Key!")
@@ -62,5 +63,6 @@ int main()
     return !result;
 #endif
 
+    delete_file(output_bin);
     return 0;
 }

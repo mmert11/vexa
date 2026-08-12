@@ -102,5 +102,6 @@ int main()
     return !result;
 #endif
 
+    delete_file("output.bin");
     return 0;
 }
