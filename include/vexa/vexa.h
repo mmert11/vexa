@@ -40,7 +40,7 @@ enum class logging_mode
 };
 
 extern quill::Logger *logger;
-void init(logging_mode mode = logging_mode::DEFAULT);
+void init(logging_mode mode = logging_mode::DEBUG);
 void set_logging_mode(vexa::logging_mode mode);
 
 namespace utils
