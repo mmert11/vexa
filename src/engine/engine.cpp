@@ -114,7 +114,7 @@ std::vector<uint8_t> vexa::engine::recompile(bool optimize)
 }
 
 void vexa::engine::write_memory(uint64_t address, std::span<const uint8_t> buffer)
-{   
+{
     bw::Sort byte_sort = context->term_manager.mk_bv_sort(8);
     for (unsigned int i = 0; i < buffer.size(); i++) {
         /*

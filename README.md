@@ -40,8 +40,8 @@ int main()
 
   // recompile the IR and insert in a new binary
   std::vector<uint8_t> recompiled = engine.recompile();
-  engine.patch(bin, recompiled, address);
-  bin.write(output_file);
+  engine.patch(bin, recompiled, 0x140001000);
+  bin.write("output.bin");
 }
 ```
 ## Example

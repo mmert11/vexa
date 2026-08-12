@@ -10,6 +10,29 @@ using namespace std;
 
 int main(int argc, char **argv)
 {
+    {
+          // initialize
+        vexa::init();
+        vexa::engine engine;
+
+  // load and map binary
+        vexa::binary bin("example.bin");
+        engine.map_binary(bin);
+
+  // explore and lift until recovering the function at 0x140001000
+        engine.run(0x140001000);
+
+  // apply optimizations
+        engine.optimize();
+
+  // print the lifted IR with statistics
+        engine.print();
+
+  // recompile the IR and insert in a new binary
+        std::vector<uint8_t> recompiled = engine.recompile();
+        engine.patch(bin, recompiled, 0x140001000);
+        bin.write("output.bin");
+    }
     std::string input_file, output_file;
     uint64_t address;
     bool no_opt = false;
