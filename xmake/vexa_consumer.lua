@@ -3,7 +3,7 @@ function configure_vexa_consumer()
     add_includedirs(path.join(os.projectdir(), "include"))
     add_linkdirs("$(builddir)/$(os)/$(arch)/$(mode)")
 
-    add_packages("vexa", "llvm", "bitwuzla", "lief", "quill", "remill")
+    add_packages("llvm", "bitwuzla", "lief", "quill", "remill")
 
     add_linkgroups(
         "vexa",
