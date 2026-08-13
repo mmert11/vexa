@@ -268,14 +268,15 @@ vexa::value *vexa::cpu::emulator::visitCallInst(llvm::CallInst &I)
                     break;
                 }
                 case SyncHyperCall::kX86ReadTSC: {
-                    for (auto &use : I.uses())
-                        builder->deleteLater(llvm::dyn_cast<llvm::Instruction>(use.getUser()));
-
-                    auto tsc = symex->concrete(0x0, 64);
+                    vexa::value *tsc = context->get_option(option::CONCRETIZE_RDTSC)
+                                           ? tsc = symex->concrete(0x0, 64)
+                                           : tsc = symex->symbolic("tsc", 64);
+                    // rax
                     auto rax_low = tsc->extract(31, 0);
                     auto rax_high = symex->concrete(0, 32);
                     auto rax = rax_high->concat(*rax_low);
                     cpu->write_register(amd64::RAX, rax);
+                    //rdx
                     auto rdx_low = tsc->extract(63, 32);
                     auto rdx_high = symex->concrete(0, 32);
                     auto rdx = rdx_high->concat(*rdx_low);
@@ -289,6 +290,9 @@ vexa::value *vexa::cpu::emulator::visitCallInst(llvm::CallInst &I)
                     THROW("unimplemented SyncHyperCall id -> {}", id);
                 }
                 }
+
+                for (auto &use : I.uses())
+                    builder->deleteLater(llvm::dyn_cast<llvm::Instruction>(use.getUser()));
             }
             else {
                 THROW("SyncHyperCall ID is not a constant");
