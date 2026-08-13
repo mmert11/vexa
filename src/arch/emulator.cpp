@@ -259,7 +259,7 @@ vexa::value *vexa::cpu::emulator::visitCallInst(llvm::CallInst &I)
 
         else if (callee == cpu->intrinsics->sync_hyper_call) {
             if (auto ID = llvm::dyn_cast<llvm::ConstantInt>(I.getArgOperand(2))) {
-                switch (ID->getZExtValue()) {
+                switch (auto id = ID->getZExtValue()) {
                 case SyncHyperCall::kX86CPUID: {
                     cpu->write_register(amd64::RAX, symex->concrete(0x00A50F00, 64));
                     cpu->write_register(amd64::RBX, symex->concrete(0x000C0800, 64));
@@ -267,12 +267,31 @@ vexa::value *vexa::cpu::emulator::visitCallInst(llvm::CallInst &I)
                     cpu->write_register(amd64::RDX, symex->concrete(0x178BFBFF, 64));
                     break;
                 }
-                default:
-                    THROW("Unknown SyncHyperCall");
+                case SyncHyperCall::kX86ReadTSC: {
+                    for (auto &use : I.uses())
+                        builder->deleteLater(llvm::dyn_cast<llvm::Instruction>(use.getUser()));
+
+                    auto tsc = symex->concrete(0x0, 64);
+                    auto rax_low = tsc->extract(31, 0);
+                    auto rax_high = symex->concrete(0, 32);
+                    auto rax = rax_high->concat(*rax_low);
+                    cpu->write_register(amd64::RAX, rax);
+                    auto rdx_low = tsc->extract(63, 32);
+                    auto rdx_high = symex->concrete(0, 32);
+                    auto rdx = rdx_high->concat(*rdx_low);
+                    cpu->write_register(amd64::RDX, rdx);
+                    break;
+                }
+                default: {
+                    logger->flush_log();
+                    I.print(llvm::outs());
+                    llvm::outs() << "\n";
+                    THROW("unimplemented SyncHyperCall id -> {}", id);
+                }
                 }
             }
             else {
-                THROW("SyncHyperCall ID error");
+                THROW("SyncHyperCall ID is not a constant");
             }
         }
 
@@ -332,7 +351,7 @@ vexa::value *vexa::cpu::emulator::visitExtractElementInst(llvm::ExtractElementIn
         VEXA_ASSERT(element_index < element_count);
 
         uint64_t low_bit = element_index * element_bit_width;
-        return symex->value(vector->extract(low_bit + element_bit_width - 1, low_bit));
+        return vector->extract(low_bit + element_bit_width - 1, low_bit);
     }
 
     std::string poison_name =
@@ -349,10 +368,10 @@ vexa::value *vexa::cpu::emulator::visitExtractElementInst(llvm::ExtractElementIn
          ++element_index)
     {
         uint64_t low_bit = element_index * element_bit_width;
-        bw::Term element = vector->extract(low_bit + element_bit_width - 1, low_bit);
+        bw::Term element = vector->extract(low_bit + element_bit_width - 1, low_bit)->as_expr();
         vexa::value *expected_index = symex->concrete(element_index, index->size());
         result = context->term_manager.mk_term(
-            bw::Kind::ITE, {*index == *expected_index, element, result});
+            bw::Kind::ITE, {(*index == *expected_index)->as_expr(), element, result});
     }
 
     return symex->value(result);
@@ -364,7 +383,7 @@ vexa::value *vexa::cpu::emulator::visitSelectInst(llvm::SelectInst &I)
     vexa::value *lhs = VEXA_VAL(I.getTrueValue()).v;
     vexa::value *rhs = VEXA_VAL(I.getFalseValue()).v;
 
-    return symex->value(cond->ite(*lhs, *rhs));
+    return cond->ite(*lhs, *rhs);
 }
 
 vexa::value *vexa::cpu::emulator::visitAllocaInst(llvm::AllocaInst &I)
@@ -380,7 +399,7 @@ vexa::value *vexa::cpu::emulator::visitGetElementPtrInst(llvm::GetElementPtrInst
         // calculate pointerOperand value + constant offset
         vexa::value *_offset = symex->concrete(offset.getZExtValue(), 64);
         vexa::pointer *ptr = vexa::dyn_cast<vexa::pointer>(symex->get(I.getPointerOperand()));
-        vexa::value *addr = symex->value(*ptr + *_offset);
+        vexa::value *addr = *ptr + *_offset;
         return symex->pointer(addr, ptr->get_page());
     }
     THROW("getelementptr, this shouldn't happen...");
@@ -412,7 +431,7 @@ vexa::value *vexa::cpu::emulator::visitBinaryOperator(llvm::BinaryOperator &I)
     vexa::value *lhs = VEXA_VAL(I.getOperand(0)).v;
     vexa::value *rhs = VEXA_VAL(I.getOperand(1)).v;
 
-    std::optional<bw::Term> expr;
+    vexa::value *expr;
     switch (I.getOpcode()) {
     case llvm::Instruction::Add:
         expr = *lhs + *rhs;
@@ -457,7 +476,7 @@ vexa::value *vexa::cpu::emulator::visitBinaryOperator(llvm::BinaryOperator &I)
         THROW("unsupported binary operator -> {}", std::string(I.getOpcodeName()));
     }
 
-    return symex->value(std::move(*expr));
+    return expr;
 }
 
 vexa::value *vexa::cpu::emulator::visitICmpInst(llvm::ICmpInst &I)
@@ -465,7 +484,7 @@ vexa::value *vexa::cpu::emulator::visitICmpInst(llvm::ICmpInst &I)
     vexa::value *lhs = VEXA_VAL(I.getOperand(0)).v;
     vexa::value *rhs = VEXA_VAL(I.getOperand(1)).v;
 
-    std::optional<bw::Term> expr;
+    vexa::value *expr;
     switch (I.getCmpPredicate()) {
     case llvm::ICmpInst::ICMP_EQ:
         expr = *lhs == *rhs;
@@ -505,7 +524,7 @@ vexa::value *vexa::cpu::emulator::visitICmpInst(llvm::ICmpInst &I)
     bw::Sort bool_sort = context->term_manager.mk_bv_sort(1);
     return symex->value(context->term_manager.mk_term(
         bw::Kind::ITE,
-        {*expr,
+        {expr->as_expr(),
          context->term_manager.mk_bv_one(bool_sort),
          context->term_manager.mk_bv_zero(bool_sort)}));
 }
@@ -515,7 +534,7 @@ vexa::value *vexa::cpu::emulator::visitZExtInst(llvm::ZExtInst &I)
     vexa::value *src = symex->get(I.getOperand(0));
     // check if the operand size in llvm matches with it's size in symex
     VEXA_ASSERT(src->size() == I.getSrcTy()->getPrimitiveSizeInBits());
-    return symex->value(src->zext(I.getDestTy()->getPrimitiveSizeInBits() - src->size()));
+    return src->zext(I.getDestTy()->getPrimitiveSizeInBits() - src->size());
 }
 
 vexa::value *vexa::cpu::emulator::visitSExtInst(llvm::SExtInst &I)
@@ -523,7 +542,7 @@ vexa::value *vexa::cpu::emulator::visitSExtInst(llvm::SExtInst &I)
     vexa::value *src = symex->get(I.getOperand(0));
     // check if the operand size in llvm matches with it's size in symex
     VEXA_ASSERT(src->size() == I.getSrcTy()->getPrimitiveSizeInBits());
-    return symex->value(src->sext(I.getDestTy()->getPrimitiveSizeInBits() - src->size()));
+    return src->sext(I.getDestTy()->getPrimitiveSizeInBits() - src->size());
 }
 
 vexa::value *vexa::cpu::emulator::visitTruncInst(llvm::TruncInst &I)
@@ -531,7 +550,7 @@ vexa::value *vexa::cpu::emulator::visitTruncInst(llvm::TruncInst &I)
     vexa::value *src = symex->get(I.getOperand(0));
     // check if the operand size in llvm matches with it's size in symex
     VEXA_ASSERT(src->size() == I.getSrcTy()->getPrimitiveSizeInBits());
-    return symex->value(src->extract(I.getDestTy()->getPrimitiveSizeInBits() - 1, 0));
+    return src->extract(I.getDestTy()->getPrimitiveSizeInBits() - 1, 0);
 }
 
 vexa::value *vexa::cpu::emulator::handle_llvm_intrinsics(
@@ -550,13 +569,13 @@ vexa::value *vexa::cpu::emulator::handle_llvm_intrinsics(
         // extract the first bit and zero extend to target size
         bw::Term total = tm.mk_term(
             bw::Kind::BV_ZERO_EXTEND,
-            {src->extract(0, 0)},
+            {src->extract(0, 0)->as_expr()},
             {static_cast<uint64_t>(dst_bit_width - 1)});
         // then extract other bits and add to the total
         for (size_t i = 1; i < src_bit_width; i++) {
             bw::Term bit = tm.mk_term(
                 bw::Kind::BV_ZERO_EXTEND,
-                {src->extract(i, i)},
+                {src->extract(i, i)->as_expr()},
                 {static_cast<uint64_t>(dst_bit_width - 1)});
             total = tm.mk_term(bw::Kind::BV_ADD, {total, bit});
         }
@@ -617,9 +636,9 @@ vexa::value *vexa::cpu::emulator::handle_llvm_intrinsics(
         uint32_t bit_width = src->size();
         VEXA_ASSERT(bit_width % 8 == 0 && "bswap bit width must be a multiple of 8");
 
-        bw::Term result = src->extract(7, 0);
+        bw::Term result = src->extract(7, 0)->as_expr();
         for (size_t i = 8; i < bit_width; i += 8) {
-            bw::Term next_byte = src->extract(i + 7, i);
+            bw::Term next_byte = src->extract(i + 7, i)->as_expr();
             result = tm.mk_term(bw::Kind::BV_CONCAT, {result, next_byte});
         }
 
@@ -637,7 +656,7 @@ vexa::value *vexa::cpu::emulator::handle_llvm_intrinsics(
         bw::Term bit_one = tm.mk_bv_one(tm.mk_bv_sort(1));
 
         for (int i = bit_width - 1; i >= 0; i--) {
-            bw::Term current_bit = src->extract(i, i);
+            bw::Term current_bit = src->extract(i, i)->as_expr();
             bw::Term current_idx = tm.mk_bv_value_uint64(dst_sort, i);
             bw::Term is_one = tm.mk_term(bw::Kind::EQUAL, {current_bit, bit_one});
             result = tm.mk_term(bw::Kind::ITE, {is_one, current_idx, result});
@@ -656,7 +675,7 @@ vexa::value *vexa::cpu::emulator::handle_llvm_intrinsics(
         bw::Term bit_one = tm.mk_bv_one(tm.mk_bv_sort(1));
 
         for (uint32_t i = 0; i < bit_width; i++) {
-            bw::Term current_bit = src->extract(i, i);
+            bw::Term current_bit = src->extract(i, i)->as_expr();
             uint32_t leading_zeros = bit_width - 1 - i;
             bw::Term current_idx = tm.mk_bv_value_uint64(dst_sort, leading_zeros);
             bw::Term is_one = tm.mk_term(bw::Kind::EQUAL, {current_bit, bit_one});
@@ -673,8 +692,8 @@ vexa::value *vexa::cpu::emulator::handle_llvm_intrinsics(
         uint8_t bit_width = src0->size();
         VEXA_ASSERT(src1->size() == bit_width);
 
-        bw::Term result =
-            tm.mk_term(bw::Kind::ITE, {src0->uge(*src1), src0->as_expr(), src1->as_expr()});
+        bw::Term result = tm.mk_term(
+            bw::Kind::ITE, {src0->uge(*src1)->as_expr(), src0->as_expr(), src1->as_expr()});
 
         uint8_t dst_bit_width = I.getType()->getPrimitiveSizeInBits();
         VEXA_ASSERT(dst_bit_width == bit_width);
@@ -690,8 +709,8 @@ vexa::value *vexa::cpu::emulator::handle_llvm_intrinsics(
         VEXA_ASSERT(dst_bit_width == bit_width);
 
         bw::Term zero = tm.mk_bv_zero(tm.mk_bv_sort(dst_bit_width));
-        bw::Term sub = *src0 - *src1;
-        bw::Term result = tm.mk_term(bw::Kind::ITE, {src0->ult(*src1), zero, sub});
+        bw::Term sub = (*src0 - *src1)->as_expr();
+        bw::Term result = tm.mk_term(bw::Kind::ITE, {src0->ult(*src1)->as_expr(), zero, sub});
 
         VEXA_ASSERT(dst_bit_width == result.sort().bv_size());
         return symex->value(std::move(result));

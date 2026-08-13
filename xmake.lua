@@ -124,8 +124,8 @@ target("vexa")
         "include/(vexa/**.hpp)"
     )
 
-    --set_symbols("debug")
-    --set_strip("none")
+    set_symbols("debug")
+    set_strip("none")
 
 target("vexa-cli")
     set_kind("binary")
@@ -135,8 +135,8 @@ target("vexa-cli")
     configure_vexa_consumer()
     add_packages("cli11")
 
-    --set_symbols("debug")
-    --set_strip("none")
+    set_symbols("debug")
+    set_strip("none")
 
 after_build(function (target)
     import("core.project.task")
