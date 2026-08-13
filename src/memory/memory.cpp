@@ -23,7 +23,7 @@ void vexa::memory::write(vexa::pointer *addr, vexa::value *val)
         int byte_size = val->size() / 8;
 
         for (int i = 0; i < byte_size; i++) {
-            bw::Term byte = val->extract(i * 8 + 7, i * 8);
+            bw::Term byte = val->extract(i * 8 + 7, i * 8)->as_expr();
             if (!byte.is_value())
                 byte = context->bitwuzla->simplify(byte);
             page->write(base + i, std::move(byte));

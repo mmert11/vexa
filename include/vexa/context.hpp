@@ -40,6 +40,11 @@ class engine;
 
 enum class option
 {
+    // Decides whether or not to concretize rax & rdx at rdtsc instruction
+    // 0: disabled
+    // 1: enabled
+    CONCRETIZE_RDTSC,
+
     // Decides whether or not to fork paths at conditional moves
     // 0: disabled
     // 1: enabled
@@ -135,6 +140,7 @@ class context
     int get_option(option opt);
 
     std::unordered_map<option, int> options = {
+        {option::CONCRETIZE_RDTSC, 1},
         {option::FORK_AT_CMOVS, 1},
         {option::OPAQUE_SOLVING, 1},
         {option::MODE, 0},

@@ -130,6 +130,7 @@ vexa::value *vexa::cpu::read_register(vexa::reg_t r)
 void vexa::cpu::write_register(vexa::reg_t r, vexa::value *val)
 {
     auto ptr = symex->pointer(symex->concrete(registers[r]->offset, 64), state_ptr.v->get_page());
+    //VEXA_ASSERT(val->size() == registers[r]->size);        
     memory->write(ptr, val);
 }
 
@@ -514,7 +515,7 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
                 VEXA_EXEC(builder->CreateStore(true_val, store_ptr));
             }
             else {
-                path_constraints.push_back(!*cond_val.v);
+                path_constraints.push_back((!*cond_val.v)->as_expr());
                 VEXA_EXEC(builder->CreateStore(false_val, store_ptr));
             }
             return;
@@ -555,7 +556,7 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
             else {
                 // OPAQUE NOT TAKEN
                 PC = fallthrough_pc;
-                path_constraints.push_back(!*condition.v);
+                path_constraints.push_back((!*condition.v)->as_expr());
                 EVENT_HANDLER(event_kind::CONDITIONAL_FALLTHROUGH);
             }
 
@@ -570,7 +571,7 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
 
     // save fallthrough path
     //
-    path_constraints.push_back(!*condition.v);
+    path_constraints.push_back((!*condition.v)->as_expr());
     unexplored_paths.push(take_snapshot(fallthrough_pc, fallthrough_bb));
 
     // create conditional jump
@@ -636,7 +637,7 @@ vexa::dual_pointer vexa::cpu::get_page(vexa::value *value)
 vexa::value *vexa::cpu::calculate_pointer(vexa::value *addr)
 {
     vexa::dual_pointer page = get_page(addr);
-    vexa::value *new_v = symex->value(*page.v + *addr);
+    vexa::value *new_v = *page.v + *addr;
     vexa::pointer *new_p = symex->pointer(new_v, page.v->get_page());
 
     return new_p;

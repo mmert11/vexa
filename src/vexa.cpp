@@ -16,8 +16,7 @@ void vexa::init(logging_mode mode)
     LIEF::logging::set_level(LIEF::logging::LEVEL::OFF);
 
     // init quill (for logging)
-    quill::Backend::start<quill::FrontendOptions>(
-        quill::BackendOptions{}, quill::SignalHandlerOptions{});
+    quill::Backend::start();
     logger = quill::Frontend::create_or_get_logger(
         "vexa",
         quill::Frontend::create_or_get_sink<quill::ConsoleSink>("sink_id_1"),

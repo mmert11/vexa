@@ -63,7 +63,7 @@ vexa::ir::builder::inbounds_gep(llvm::Type *type, llvm::Value *base, llvm::Value
     // calculate it's symbolic expression
     vexa::pointer *_base = vexa::to_ptr(symex->get(base));
     vexa::value *_offset = symex->get(offset);
-    vexa::value *new_v = symex->value(*_base + *_offset);
+    vexa::value *new_v = *_base + *_offset;
     vexa::pointer *new_p = symex->pointer(new_v, _base->get_page());
 
     // set in symex
