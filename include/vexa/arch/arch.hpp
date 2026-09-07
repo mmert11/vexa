@@ -1,8 +1,6 @@
 #pragma once
 
-#include <functional>
 #include <unordered_map>
-#include <unordered_set>
 
 #include "../ir/builder.hpp"
 #include "../memory/memory.hpp"

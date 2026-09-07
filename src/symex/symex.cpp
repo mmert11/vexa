@@ -92,6 +92,7 @@ void vexa::symex::clear()
 
 void vexa::symex::specialize(const bw::Term &from, const bw::Term &to)
 {
+    return;
     auto it = substitutions.find(from);
     if (it != substitutions.end() && it->second == to)
         return;

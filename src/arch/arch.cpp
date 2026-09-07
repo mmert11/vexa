@@ -1,6 +1,5 @@
 #include <vexa/vexa.h>
 
-#include <format>
 #include <llvm/ADT/SmallVector.h>
 
 #include <remill/BC/Util.h>
@@ -130,7 +129,7 @@ vexa::value *vexa::cpu::read_register(vexa::reg_t r)
 void vexa::cpu::write_register(vexa::reg_t r, vexa::value *val)
 {
     auto ptr = symex->pointer(symex->concrete(registers[r]->offset, 64), state_ptr.v->get_page());
-    //VEXA_ASSERT(val->size() == registers[r]->size);        
+    //VEXA_ASSERT(val->size() == registers[r]->size);
     memory->write(ptr, val);
 }
 
@@ -300,13 +299,19 @@ vexa::cpu::internal_lifter_status vexa::cpu::process_instruction()
     // custom memory access for performance
     //
     for (int i = 0; i < 15; i++) {
-        const std::optional<bw::Term> *byte = global_memory->find(PC + i);
-        if (!byte || !*byte)
+        const vexa::mem_cell *cell = global_memory->find(PC + i);
+
+        if (!cell || !cell->original_val)
             break;
-        const bw::Term &byte_expr = **byte;
-        if (!byte_expr.is_value())
+
+        bw::Term expr = cell->original_val->as_expr();
+        if (!expr.is_value())
             break;
-        bytes_str.push_back(static_cast<char>(vexa::value::as_uint64(byte_expr) & 0xFF));
+
+        uint64_t full_val = cell->original_val->as_uint64();
+        uint8_t byte_val = static_cast<uint8_t>((full_val >> (cell->which_byte * 8)) & 0xFF);
+
+        bytes_str.push_back(static_cast<char>(byte_val));
     }
 
     // disassemble instruction
@@ -511,11 +516,9 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
             builder->deleteLater(store);
 
             if (result) {
-                path_constraints.push_back(cond_val.v->as_expr_bool());
                 VEXA_EXEC(builder->CreateStore(true_val, store_ptr));
             }
             else {
-                path_constraints.push_back((!*cond_val.v)->as_expr());
                 VEXA_EXEC(builder->CreateStore(false_val, store_ptr));
             }
             return;
@@ -550,13 +553,11 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
             if (taken) {
                 // OPAQUE TAKEN
                 PC = jump_pc;
-                path_constraints.push_back(condition.v->as_expr_bool());
                 EVENT_HANDLER(event_kind::CONDITIONAL_TAKEN);
             }
             else {
                 // OPAQUE NOT TAKEN
                 PC = fallthrough_pc;
-                path_constraints.push_back((!*condition.v)->as_expr());
                 EVENT_HANDLER(event_kind::CONDITIONAL_FALLTHROUGH);
             }
 

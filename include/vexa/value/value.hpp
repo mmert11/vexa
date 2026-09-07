@@ -1,5 +1,4 @@
 #pragma once
-#include "global.hpp"
 #include <bitwuzla/cpp/bitwuzla.h>
 #include <llvm/IR/Value.h>
 #include <memory>
@@ -28,15 +27,15 @@ class value
     };
 
     value(vexa::context *c)
-        : context(c), _kind(kind::value), term_manager(nullptr), solver(nullptr), simplified(true)
+        : context(c), _kind(kind::value), term_manager(nullptr), solver(nullptr), simplified(false)
     {}
     value(vexa::context *c, kind k)
-        : context(c), _kind(k), term_manager(nullptr), solver(nullptr), simplified(true)
+        : context(c), _kind(k), term_manager(nullptr), solver(nullptr), simplified(false)
     {}
     value(vexa::context *c, bw::Term e, bw::TermManager &tm, bw::Bitwuzla &bzla)
         : context(c),
           _kind(kind::value),
-          term(std::move(e)),
+          term(std::move(bzla.simplify(e))),
           term_manager(&tm),
           solver(&bzla),
           simplified(term.is_value())
