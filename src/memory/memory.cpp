@@ -21,7 +21,6 @@ void vexa::memory::write(vexa::pointer *addr, vexa::value *val)
     if (addr->is_concrete()) {
         uint64_t base = addr->as_uint64();
         uint8_t byte_size = val->size() / 8;
-
         for (uint8_t i = 0; i < byte_size; i++) {
             mem_cell cell{val->simplify(), byte_size, i};
             page->write(base + i, std::move(cell));
@@ -48,7 +47,7 @@ vexa::value *vexa::memory::read(vexa::pointer *addr, int size)
             8);
 
         mem_cell uninit_cell{uninit_read, 1, 0};
-        //page->write(address, uninit_cell);
+        page->write(address, uninit_cell);
         return uninit_cell;
     };
 
@@ -115,8 +114,11 @@ vexa::value *vexa::memory::read(vexa::pointer *addr, int size)
             last_byte_original_val->extract(last_byte.which_byte * 8 + 7, last_byte.which_byte * 8);
         for (int i = 1; i < read_bytes.size(); i++) {
             mem_cell byte = read_bytes[i];
-            vexa::value *extracted_byte =
-                byte.original_val->extract(byte.which_byte * 8 + 7, byte.which_byte * 8);
+            if (byte.extracted_cache == nullptr)
+                byte.extracted_cache =
+                    byte.original_val->extract(byte.which_byte * 8 + 7, byte.which_byte * 8);
+
+            vexa::value *extracted_byte = byte.original_val->extract(byte.which_byte * 8 + 7, byte.which_byte * 8);
             value = value->concat(*extracted_byte);
         }
 

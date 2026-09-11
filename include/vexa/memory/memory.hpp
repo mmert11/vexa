@@ -11,7 +11,7 @@ struct mem_cell
     vexa::value *original_val;
     uint8_t total_size; // in bytes
     uint8_t which_byte;
-    std::optional<bw::Term> extracted_cache;
+    vexa::value *extracted_cache;
 };
 
 struct mem_page

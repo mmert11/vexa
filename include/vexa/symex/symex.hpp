@@ -4,15 +4,11 @@
 
 #include <deque>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/IR/ValueMap.h>
 
 namespace vexa
 {
-struct symex_state
-{
-    llvm::DenseMap<llvm::Value *, vexa::value *> specialized_vars;
-    std::unordered_map<bw::Term, bw::Term> substitutions;
-};
-
 class symex
 {
   public:
@@ -24,13 +20,9 @@ class symex
     vexa::value *value(bw::Term e);
     vexa::value *get(llvm::Value *v);
     void set(llvm::Value *v, vexa::value *e);
-    void specialize(const bw::Term &from, const bw::Term &to);
-    void clear_specialization();
     void clear();
     bool is_sync(llvm::Value *v);
-    symex_state take_snapshot() const;
-    void restore_snapshot(symex_state state);
-
+    
   private:
     bw::Term specialize(bw::Term term);
     bw::TermManager *term_manager;
@@ -38,8 +30,9 @@ class symex
     vexa::context *context;
     std::deque<vexa::value> values;
     std::deque<vexa::pointer> pointers;
-    llvm::DenseMap<llvm::Value *, vexa::value *> vars;
+    llvm::ValueMap<llvm::Value *, vexa::value *> vars;
     llvm::DenseMap<llvm::Value *, vexa::value *> specialized_vars;
     std::unordered_map<bw::Term, bw::Term> substitutions;
+    llvm::DenseSet<llvm::Value *> multi_path_vars;
 };
 } // namespace vexa

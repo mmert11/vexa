@@ -1,3 +1,4 @@
+#include "bitwuzla/cpp/sat_solver.h"
 #include <vexa/vexa.h>
 
 #include <llvm/ADT/SmallVector.h>
@@ -15,13 +16,12 @@ vexa::cpu::cpu(vexa::context *_context)
 vexa::cpu::snapshot vexa::cpu::take_snapshot(uint64_t pc, llvm::BasicBlock *bb)
 {
     return vexa::cpu::snapshot{
-        memory->take_snapshot(), symex->take_snapshot(), pc, VPC, bb, VJMP, PATH, path_constraints};
+        memory->take_snapshot(), pc, VPC, bb, VJMP, PATH, path_constraints};
 }
 
 void vexa::cpu::restore_snapshot(const vexa::cpu::snapshot &ss)
 {
     memory->restore_snapshot(ss.mem_ss);
-    symex->restore_snapshot(ss.symex_ss);
     builder->SetInsertPoint(ss.bb);
     PC = ss.pc;
     VPC = ss.vpc;
@@ -32,8 +32,7 @@ void vexa::cpu::restore_snapshot(const vexa::cpu::snapshot &ss)
 
 void vexa::cpu::restore_snapshot(vexa::cpu::snapshot &&ss)
 {
-    memory->restore_snapshot(ss.mem_ss);
-    symex->restore_snapshot(std::move(ss.symex_ss));
+    memory->restore_snapshot(std::move(ss.mem_ss));
     builder->SetInsertPoint(ss.bb);
     PC = ss.pc;
     VPC = ss.vpc;
@@ -231,7 +230,7 @@ ret:
         }
     }
 
-    symex->clear_specialization();
+    //symex->clear_specialization();
     builder->eraseDeletedInstructions();
     return;
 }
@@ -339,7 +338,6 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
     block = builder->basic_block(inst.function + "_");
     builder->CreateBr(block);
     builder->SetInsertPoint(block);
-
     EVENT_HANDLER(event_kind::INSTRUCTION_LIFT);
 
     // lift instruction using remill, inline the semantics
@@ -420,10 +418,12 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
         if (possible_addrs.size() == 2) {
             vexa::dual_value cond = VEXA_EXEC(builder->CreateICmpEQ(
                 next_dual.l, builder->getInt64(vexa::value::as_uint64(possible_addrs.front()))));
+
             branching(
                 cond,
                 vexa::value::as_uint64(possible_addrs.front()),
                 vexa::value::as_uint64(possible_addrs.back()));
+
             return internal_lifter_status::successful;
         }
 
@@ -542,6 +542,19 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
     LOG_INFO(logger, "Path fork by CMOVxx");
 }
 
+void vexa::cpu::solve_cpu_context()
+{
+    for (const auto &[reg_id, reg] : registers) {
+        if (reg->parent || reg->size < 8)
+            continue;
+
+        vexa::value *value = read_register(reg_id)->simplify(path_constraints);
+        if (value->simplify()->is_concrete()) {
+            write_register(reg_id, value);
+        }
+    }
+}
+
 void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t fallthrough_pc)
 {
     if (context->get_option(vexa::option::OPAQUE_SOLVING)) {
@@ -553,11 +566,13 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
             if (taken) {
                 // OPAQUE TAKEN
                 PC = jump_pc;
+                //path_constraints.push_back(condition.v->as_expr_bool());
                 EVENT_HANDLER(event_kind::CONDITIONAL_TAKEN);
             }
             else {
                 // OPAQUE NOT TAKEN
                 PC = fallthrough_pc;
+                //path_constraints.push_back((!*condition.v)->as_expr());
                 EVENT_HANDLER(event_kind::CONDITIONAL_FALLTHROUGH);
             }
 
@@ -570,20 +585,27 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
     llvm::BasicBlock *jump_bb = builder->basic_block(utils::addr_to_str(jump_pc));
     llvm::BasicBlock *fallthrough_bb = builder->basic_block(utils::addr_to_str(fallthrough_pc));
 
+    auto base_snapshot = take_snapshot(PC, block);
+
     // save fallthrough path
     //
     path_constraints.push_back((!*condition.v)->as_expr());
+    solve_cpu_context();
     unexplored_paths.push(take_snapshot(fallthrough_pc, fallthrough_bb));
 
-    // create conditional jump
+    // reset context
+    //
+    restore_snapshot(std::move(base_snapshot));
+
+     // create conditional jump
     //
     builder->CreateCondBr(condition.l, jump_bb, fallthrough_bb);
     builder->SetInsertPoint(jump_bb);
 
     // set execution to taken path
     //
-    path_constraints.pop_back();
     path_constraints.push_back(condition.v->as_expr_bool());
+    solve_cpu_context();
     LOG_INFO(logger, "Path forking");
     PC = jump_pc;
 
@@ -635,7 +657,7 @@ vexa::dual_pointer vexa::cpu::get_page(vexa::value *value)
     return mem_ptr;
 }
 
-vexa::value *vexa::cpu::calculate_pointer(vexa::value *addr)
+vexa::pointer *vexa::cpu::calculate_pointer(vexa::value *addr)
 {
     vexa::dual_pointer page = get_page(addr);
     vexa::value *new_v = *page.v + *addr;
@@ -652,7 +674,9 @@ vexa::dual_value vexa::cpu::value_to_pointer(llvm::Value *addr)
     // get value and simplify
     vexa::dual_value dv = VEXA_VAL(addr);
     vexa::value *v = dv.v;
-    v->simplify();
+
+    if (v->is_symbolic())
+        v->simplify(path_constraints);
 
     vexa::dual_value ptr;
     if (v->is_concrete()) {
@@ -660,10 +684,18 @@ vexa::dual_value vexa::cpu::value_to_pointer(llvm::Value *addr)
         ptr = builder->inbounds_gep(builder->getInt8Ty(), page.l, addr);
     }
     else {
-        ptr = builder->inttoptr(addr, builder->getPtrTy(), global_memory);
+        bw::Result res;
+        auto values = v->possible_values(path_constraints, &res);
+
+        if (!values.empty() && res == bw::Result::UNSAT && false) {
+            vexa::dual_pointer page = get_page(symex->value(values.back()));
+            ptr = builder->inbounds_gep(builder->getInt8Ty(), page.l, addr);
+        }
+        else {
+            ptr = builder->inttoptr(addr, builder->getPtrTy(), global_memory);
+        }
     }
 
-ret:
     // restore insert point
     builder->pop_ip();
     return ptr;

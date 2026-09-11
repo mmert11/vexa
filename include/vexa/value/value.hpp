@@ -26,20 +26,9 @@ class value
         pointer
     };
 
-    value(vexa::context *c)
-        : context(c), _kind(kind::value), term_manager(nullptr), solver(nullptr), simplified(false)
-    {}
-    value(vexa::context *c, kind k)
-        : context(c), _kind(k), term_manager(nullptr), solver(nullptr), simplified(false)
-    {}
-    value(vexa::context *c, bw::Term e, bw::TermManager &tm, bw::Bitwuzla &bzla)
-        : context(c),
-          _kind(kind::value),
-          term(std::move(bzla.simplify(e))),
-          term_manager(&tm),
-          solver(&bzla),
-          simplified(term.is_value())
-    {}
+    value(vexa::context *c);
+    value(vexa::context *c, kind k);
+    value(vexa::context *c, bw::Term e, bw::TermManager &tm, bw::Bitwuzla &bzla);
 
     std::vector<bw::Term>
         possible_values(const std::vector<bw::Term> &constraints, bw::Result *result = nullptr);
@@ -98,7 +87,7 @@ class value
           simplified(other.simplified)
     {}
 
-  private:
+  public:
     vexa::value *unary(bw::Kind op) const;
     vexa::value *binary(bw::Kind op, const value &rhs) const;
     vexa::context *context;
@@ -106,7 +95,9 @@ class value
     bw::Term term;
     bw::TermManager *term_manager;
     bw::Bitwuzla *solver;
-    bool simplified;
+    bool simplified = false;
+
+  private:
 };
 
 class pointer : public value

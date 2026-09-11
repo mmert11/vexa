@@ -143,11 +143,11 @@ class context
         {option::CONCRETIZE_RDTSC, 1},
         {option::FORK_AT_CMOVS, 1},
         {option::OPAQUE_SOLVING, 1},
+        {option::CFG_JOIN_POLICY, 0},
         {option::MODE, 0},
         {option::STATE_CLEANUP, 1},
         {option::CONSTANT_PROPAGATION, 1},
-        {option::LOOP_REROLL, 1},
-        {option::CFG_JOIN_POLICY, 0}};
+        {option::LOOP_REROLL, 0}};
 
     void event_handler(vexa::event_kind event_k);
     std::unordered_map<vexa::event_kind, event_callback_t> event_callbacks;
