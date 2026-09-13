@@ -1,6 +1,6 @@
+#include "bitwuzla/cpp/sat_solver.h"
 #include <vexa/vexa.h>
 
-#include <format>
 #include <llvm/ADT/SmallVector.h>
 
 #include <remill/BC/Util.h>
@@ -15,14 +15,12 @@ vexa::cpu::cpu(vexa::context *_context)
 
 vexa::cpu::snapshot vexa::cpu::take_snapshot(uint64_t pc, llvm::BasicBlock *bb)
 {
-    return vexa::cpu::snapshot{
-        memory->take_snapshot(), symex->take_snapshot(), pc, VPC, bb, VJMP, PATH, path_constraints};
+    return vexa::cpu::snapshot{memory->take_snapshot(), pc, VPC, bb, VJMP, PATH, path_constraints};
 }
 
 void vexa::cpu::restore_snapshot(const vexa::cpu::snapshot &ss)
 {
     memory->restore_snapshot(ss.mem_ss);
-    symex->restore_snapshot(ss.symex_ss);
     builder->SetInsertPoint(ss.bb);
     PC = ss.pc;
     VPC = ss.vpc;
@@ -33,8 +31,7 @@ void vexa::cpu::restore_snapshot(const vexa::cpu::snapshot &ss)
 
 void vexa::cpu::restore_snapshot(vexa::cpu::snapshot &&ss)
 {
-    memory->restore_snapshot(ss.mem_ss);
-    symex->restore_snapshot(std::move(ss.symex_ss));
+    memory->restore_snapshot(std::move(ss.mem_ss));
     builder->SetInsertPoint(ss.bb);
     PC = ss.pc;
     VPC = ss.vpc;
@@ -130,7 +127,7 @@ vexa::value *vexa::cpu::read_register(vexa::reg_t r)
 void vexa::cpu::write_register(vexa::reg_t r, vexa::value *val)
 {
     auto ptr = symex->pointer(symex->concrete(registers[r]->offset, 64), state_ptr.v->get_page());
-    //VEXA_ASSERT(val->size() == registers[r]->size);        
+    //VEXA_ASSERT(val->size() == registers[r]->size);
     memory->write(ptr, val);
 }
 
@@ -232,7 +229,7 @@ ret:
         }
     }
 
-    symex->clear_specialization();
+    //symex->clear_specialization();
     builder->eraseDeletedInstructions();
     return;
 }
@@ -300,13 +297,19 @@ vexa::cpu::internal_lifter_status vexa::cpu::process_instruction()
     // custom memory access for performance
     //
     for (int i = 0; i < 15; i++) {
-        const std::optional<bw::Term> *byte = global_memory->find(PC + i);
-        if (!byte || !*byte)
+        const vexa::mem_cell *cell = global_memory->find(PC + i);
+
+        if (!cell || !cell->original_val)
             break;
-        const bw::Term &byte_expr = **byte;
-        if (!byte_expr.is_value())
+
+        bw::Term expr = cell->original_val->as_expr();
+        if (!expr.is_value())
             break;
-        bytes_str.push_back(static_cast<char>(vexa::value::as_uint64(byte_expr) & 0xFF));
+
+        uint64_t full_val = cell->original_val->as_uint64();
+        uint8_t byte_val = static_cast<uint8_t>((full_val >> (cell->which_byte * 8)) & 0xFF);
+
+        bytes_str.push_back(static_cast<char>(byte_val));
     }
 
     // disassemble instruction
@@ -334,7 +337,6 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
     block = builder->basic_block(inst.function + "_");
     builder->CreateBr(block);
     builder->SetInsertPoint(block);
-
     EVENT_HANDLER(event_kind::INSTRUCTION_LIFT);
 
     // lift instruction using remill, inline the semantics
@@ -415,10 +417,12 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
         if (possible_addrs.size() == 2) {
             vexa::dual_value cond = VEXA_EXEC(builder->CreateICmpEQ(
                 next_dual.l, builder->getInt64(vexa::value::as_uint64(possible_addrs.front()))));
+
             branching(
                 cond,
                 vexa::value::as_uint64(possible_addrs.front()),
                 vexa::value::as_uint64(possible_addrs.back()));
+
             return internal_lifter_status::successful;
         }
 
@@ -511,11 +515,9 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
             builder->deleteLater(store);
 
             if (result) {
-                path_constraints.push_back(cond_val.v->as_expr_bool());
                 VEXA_EXEC(builder->CreateStore(true_val, store_ptr));
             }
             else {
-                path_constraints.push_back((!*cond_val.v)->as_expr());
                 VEXA_EXEC(builder->CreateStore(false_val, store_ptr));
             }
             return;
@@ -537,6 +539,19 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
 
     builder->deleteLater(store);
     LOG_INFO(logger, "Path fork by CMOVxx");
+}
+
+void vexa::cpu::solve_cpu_context()
+{
+    for (const auto &[reg_id, reg] : registers) {
+        if (reg->parent || reg->size < 8)
+            continue;
+
+        vexa::value *value = read_register(reg_id)->simplify(path_constraints);
+        if (value->simplify()->is_concrete()) {
+            write_register(reg_id, value);
+        }
+    }
 }
 
 void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t fallthrough_pc)
@@ -569,20 +584,27 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
     llvm::BasicBlock *jump_bb = builder->basic_block(utils::addr_to_str(jump_pc));
     llvm::BasicBlock *fallthrough_bb = builder->basic_block(utils::addr_to_str(fallthrough_pc));
 
+    auto base_snapshot = take_snapshot(PC, block);
+
     // save fallthrough path
     //
     path_constraints.push_back((!*condition.v)->as_expr());
+    solve_cpu_context();
     unexplored_paths.push(take_snapshot(fallthrough_pc, fallthrough_bb));
 
-    // create conditional jump
+    // reset context
+    //
+    restore_snapshot(std::move(base_snapshot));
+
+     // create conditional jump
     //
     builder->CreateCondBr(condition.l, jump_bb, fallthrough_bb);
     builder->SetInsertPoint(jump_bb);
 
     // set execution to taken path
     //
-    path_constraints.pop_back();
     path_constraints.push_back(condition.v->as_expr_bool());
+    solve_cpu_context();
     LOG_INFO(logger, "Path forking");
     PC = jump_pc;
 
@@ -634,7 +656,7 @@ vexa::dual_pointer vexa::cpu::get_page(vexa::value *value)
     return mem_ptr;
 }
 
-vexa::value *vexa::cpu::calculate_pointer(vexa::value *addr)
+vexa::pointer *vexa::cpu::calculate_pointer(vexa::value *addr)
 {
     vexa::dual_pointer page = get_page(addr);
     vexa::value *new_v = *page.v + *addr;
@@ -651,7 +673,9 @@ vexa::dual_value vexa::cpu::value_to_pointer(llvm::Value *addr)
     // get value and simplify
     vexa::dual_value dv = VEXA_VAL(addr);
     vexa::value *v = dv.v;
-    v->simplify();
+
+    if (v->is_symbolic())
+        v->simplify(path_constraints);
 
     vexa::dual_value ptr;
     if (v->is_concrete()) {
@@ -659,10 +683,18 @@ vexa::dual_value vexa::cpu::value_to_pointer(llvm::Value *addr)
         ptr = builder->inbounds_gep(builder->getInt8Ty(), page.l, addr);
     }
     else {
-        ptr = builder->inttoptr(addr, builder->getPtrTy(), global_memory);
+        bw::Result res;
+        auto values = v->possible_values(path_constraints, &res);
+
+        if (!values.empty() && res == bw::Result::UNSAT && false) {
+            vexa::dual_pointer page = get_page(symex->value(values.back()));
+            ptr = builder->inbounds_gep(builder->getInt8Ty(), page.l, addr);
+        }
+        else {
+            ptr = builder->inttoptr(addr, builder->getPtrTy(), global_memory);
+        }
     }
 
-ret:
     // restore insert point
     builder->pop_ip();
     return ptr;
@@ -684,23 +716,28 @@ bool vexa::cpu::opaque_solver(vexa::value *condition, bool &result)
         }
     }
 
-    bw::Term cond = condition->as_expr_bool();
-    bw::Term not_cond = context->term_manager.mk_term(bw::Kind::NOT, {cond});
+    // use solver for opaque predicates
+    // only if you prefer accuracy over performance
+    //
+    if (false) {
+        bw::Term cond = condition->as_expr_bool();
+        bw::Term not_cond = context->term_manager.mk_term(bw::Kind::NOT, {cond});
 
-    // check if cond can be false
-    if (context->bitwuzla->check_sat({not_cond}) == bw::Result::UNSAT) {
+        // check if cond can be false
+        if (context->bitwuzla->check_sat({not_cond}) == bw::Result::UNSAT) {
         // means it cant be false
         // we solved this branch is always taken
-        result = true;
-        return true;
-    }
+            result = true;
+            return true;
+        }
 
-    // check if cond can be true
-    if (context->bitwuzla->check_sat({cond}) == bw::Result::UNSAT) {
+        // check if cond can be true
+        if (context->bitwuzla->check_sat({cond}) == bw::Result::UNSAT) {
         // means it cant be true
         // we solved this branch is never taken
-        result = false;
-        return true;
+            result = false;
+            return true;
+        }
     }
 
     // condition is not an opaque predicate

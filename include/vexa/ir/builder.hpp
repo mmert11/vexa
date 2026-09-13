@@ -1,5 +1,6 @@
 #pragma once
 #include "../context.hpp"
+#include "../value/global.hpp"
 #include "../value/value.hpp"
 #include "pass_manager.hpp"
 

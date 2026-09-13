@@ -1,8 +1,7 @@
 #pragma once
 
-#include <functional>
+#include <llvm/IR/BasicBlock.h>
 #include <unordered_map>
-#include <unordered_set>
 
 #include "../ir/builder.hpp"
 #include "../memory/memory.hpp"
@@ -94,7 +93,6 @@ class cpu
     struct snapshot
     {
         mem_state mem_ss;
-        symex_state symex_ss;
         uint64_t pc, vpc;
         llvm::BasicBlock *bb;
         bool vjmp;
@@ -120,7 +118,7 @@ class cpu
     vexa::value *stack_access(uint64_t offset);
     void replace_remill_intrinsics();
     void handle_conditional_moves(remill::Instruction inst, llvm::BasicBlock *block);
-    vexa::value *calculate_pointer(vexa::value *addr);
+    vexa::pointer *calculate_pointer(vexa::value *addr);
     vexa::dual_pointer get_page(vexa::value *v);
     vexa::dual_value value_to_pointer(llvm::Value *addr);
     vexa::dual_value get_next_pc(llvm::BasicBlock *BB);
@@ -129,6 +127,7 @@ class cpu
     snapshot take_snapshot(uint64_t pc, llvm::BasicBlock *bb);
     void restore_snapshot(const snapshot &ss);
     void restore_snapshot(snapshot &&ss);
+    void solve_cpu_context();
     remill::Register *get_register(reg_t r);
     virtual remill::Register *get_return_register() = 0;
     vexa::value *read_register(reg_t r);

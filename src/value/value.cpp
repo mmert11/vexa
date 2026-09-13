@@ -1,5 +1,22 @@
 #include <vexa/vexa.h>
 
+vexa::value::value(vexa::context *c)
+    : context(c), _kind(kind::value), term_manager(nullptr), solver(nullptr), simplified(false)
+{}
+
+vexa::value::value(vexa::context *c, kind k)
+    : context(c), _kind(k), term_manager(nullptr), solver(nullptr), simplified(false)
+{}
+
+vexa::value::value(vexa::context *c, bw::Term e, bw::TermManager &tm, bw::Bitwuzla &bzla)
+    : context(c),
+      _kind(kind::value),
+      term(std::move(e)),
+      term_manager(&tm),
+      solver(&bzla),
+      simplified(term.is_value())
+{}
+
 std::vector<bw::Term>
     vexa::value::possible_values(const std::vector<bw::Term> &constraints, bw::Result *result)
 {
@@ -47,8 +64,7 @@ vexa::value *vexa::value::simplify(const std::vector<bw::Term> &constraints)
     //
     assumptions.push_back(term_manager->mk_term(bw::Kind::DISTINCT, {term, candidate}));
     if (solver->check_sat(assumptions) == bw::Result::UNSAT) {
-        term = std::move(candidate);
-        simplified = true;
+        return context->symex->value(std::move(candidate));
     }
     return this;
 }

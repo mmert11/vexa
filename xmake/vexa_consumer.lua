@@ -1,5 +1,5 @@
 function configure_vexa_consumer()
-    add_deps("vexa", {inherit = false})
+    add_deps("vexa", {inherit = true})
     add_includedirs(path.join(os.projectdir(), "include"))
     add_linkdirs("$(builddir)/$(os)/$(arch)/$(mode)")
 

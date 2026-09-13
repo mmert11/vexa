@@ -1,5 +1,5 @@
 set_project("vexa")
-set_version("1.4")
+set_version("1.5")
 
 add_rules("mode.debug", "mode.release")
 
