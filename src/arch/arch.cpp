@@ -15,8 +15,7 @@ vexa::cpu::cpu(vexa::context *_context)
 
 vexa::cpu::snapshot vexa::cpu::take_snapshot(uint64_t pc, llvm::BasicBlock *bb)
 {
-    return vexa::cpu::snapshot{
-        memory->take_snapshot(), pc, VPC, bb, VJMP, PATH, path_constraints};
+    return vexa::cpu::snapshot{memory->take_snapshot(), pc, VPC, bb, VJMP, PATH, path_constraints};
 }
 
 void vexa::cpu::restore_snapshot(const vexa::cpu::snapshot &ss)
@@ -566,13 +565,13 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
             if (taken) {
                 // OPAQUE TAKEN
                 PC = jump_pc;
-                //path_constraints.push_back(condition.v->as_expr_bool());
+                path_constraints.push_back(condition.v->as_expr_bool());
                 EVENT_HANDLER(event_kind::CONDITIONAL_TAKEN);
             }
             else {
                 // OPAQUE NOT TAKEN
                 PC = fallthrough_pc;
-                //path_constraints.push_back((!*condition.v)->as_expr());
+                path_constraints.push_back((!*condition.v)->as_expr());
                 EVENT_HANDLER(event_kind::CONDITIONAL_FALLTHROUGH);
             }
 
@@ -717,23 +716,28 @@ bool vexa::cpu::opaque_solver(vexa::value *condition, bool &result)
         }
     }
 
-    bw::Term cond = condition->as_expr_bool();
-    bw::Term not_cond = context->term_manager.mk_term(bw::Kind::NOT, {cond});
+    // use solver for opaque predicates
+    // only if you prefer accuracy over performance
+    //
+    if (false) {
+        bw::Term cond = condition->as_expr_bool();
+        bw::Term not_cond = context->term_manager.mk_term(bw::Kind::NOT, {cond});
 
-    // check if cond can be false
-    if (context->bitwuzla->check_sat({not_cond}) == bw::Result::UNSAT) {
+        // check if cond can be false
+        if (context->bitwuzla->check_sat({not_cond}) == bw::Result::UNSAT) {
         // means it cant be false
         // we solved this branch is always taken
-        result = true;
-        return true;
-    }
+            result = true;
+            return true;
+        }
 
-    // check if cond can be true
-    if (context->bitwuzla->check_sat({cond}) == bw::Result::UNSAT) {
+        // check if cond can be true
+        if (context->bitwuzla->check_sat({cond}) == bw::Result::UNSAT) {
         // means it cant be true
         // we solved this branch is never taken
-        result = false;
-        return true;
+            result = false;
+            return true;
+        }
     }
 
     // condition is not an opaque predicate

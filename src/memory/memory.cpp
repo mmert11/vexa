@@ -118,13 +118,14 @@ vexa::value *vexa::memory::read(vexa::pointer *addr, int size)
                 byte.extracted_cache =
                     byte.original_val->extract(byte.which_byte * 8 + 7, byte.which_byte * 8);
 
-            vexa::value *extracted_byte = byte.original_val->extract(byte.which_byte * 8 + 7, byte.which_byte * 8);
+            vexa::value *extracted_byte = byte.extracted_cache;
             value = value->concat(*extracted_byte);
         }
 
         return value;
     }
     else {
+        LOG_WARNING(logger, "Symbolic memory read! Addr: {}", addr->as_expr().str());
         return context->symex->symbolic(
             "read_" + std::to_string(std::hash<bw::Term>{}(addr->as_expr())), size);
     }

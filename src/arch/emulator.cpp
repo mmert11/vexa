@@ -58,7 +58,6 @@ vexa::value *vexa::cpu::emulator::read_memory(vexa::pointer *addr, int size)
 {
     addr->simplify();
 
-    /*
     if (addr->is_symbolic()) {
         bw::Result result;
         std::vector<bw::Term> addresses = addr->possible_values(cpu->path_constraints, &result);
@@ -85,7 +84,6 @@ vexa::value *vexa::cpu::emulator::read_memory(vexa::pointer *addr, int size)
             return final_sym;
         }
     }
-    */
 
     return memory->read(addr, size);
 }
