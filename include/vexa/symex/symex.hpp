@@ -32,14 +32,14 @@ class symex
     void restore_snapshot(symex_state state);
 
   private:
-    bw::Term specialize(bw::Term term);
     bw::TermManager *term_manager;
     bw::Bitwuzla *solver;
     vexa::context *context;
     std::deque<vexa::value> values;
     std::deque<vexa::pointer> pointers;
-    llvm::DenseMap<llvm::Value *, vexa::value *> vars;
+    llvm::ValueMap<llvm::Value *, vexa::value *> vars;
     llvm::DenseMap<llvm::Value *, vexa::value *> specialized_vars;
     std::unordered_map<bw::Term, bw::Term> substitutions;
+    llvm::DenseSet<llvm::Value *> multi_path_vars;
 };
 } // namespace vexa

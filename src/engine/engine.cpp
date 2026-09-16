@@ -1,9 +1,11 @@
+#include "vexa/ir/pass_manager.hpp"
 #include <vexa/vexa.h>
 
 #include <vexa/passes/constant_propagation.hpp>
 #include <vexa/passes/loop_reroll.hpp>
 #include <vexa/passes/state2alloca.hpp>
 #include <vexa/passes/state_cleanup.hpp>
+#include <vexa/passes/memory_scalarizer.hpp>
 
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/raw_ostream.h>
@@ -67,6 +69,8 @@ void vexa::engine::optimize()
 
     if (get_option(option::STATE_CLEANUP))
         manager.add_pass<passes::state_cleanup>();
+
+    manager.add_pass<passes::memory_scalarizer>();
 
     auto start = std::chrono::high_resolution_clock::now();
     manager.run(cpu->vexa_lifted);

@@ -95,8 +95,7 @@ void vexa::ir::pass_manager::run(llvm::Function *func)
 
     // strip ssa value names
     for (auto &BB : *func) {
-        for (auto &I : BB)
-        {
+        for (auto &I : BB) {
             if (!I.getType()->isPointerTy())
                 I.setName("");
         }

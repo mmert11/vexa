@@ -30,6 +30,7 @@ vexa::value *vexa::cpu::emulator::read_memory(vexa::pointer *addr, int size)
     return memory->read(addr, size);
 }
 
+<<<<<<< Updated upstream
 llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
     llvm::CallInst &call,
     vexa::value *address,
@@ -166,19 +167,67 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
     return builder->GetInsertBlock();
 }
 
+=======
+>>>>>>> Stashed changes
 llvm::BasicBlock *vexa::cpu::emulator::write_memory_intrinsic(llvm::CallInst &call, size_t size)
 {
     // get pointer operand expression
     llvm::Value *address = call.getOperand(1);
     vexa::dual_value address_sym = VEXA_VAL(address);
-    address_sym.v->simplify();
+    address_sym.v = address_sym.v->simplify(cpu->path_constraints);
 
+<<<<<<< Updated upstream
     if (address_sym.v->is_symbolic() && !cpu->instruction.IsControlFlow()) {
+=======
+    if (address_sym.v->is_symbolic()) {
+>>>>>>> Stashed changes
         bw::Result result;
         std::vector<bw::Term> values =
             address_sym.v->possible_values(cpu->path_constraints, &result);
-        if (values.size() > 1 && result == bw::Result::UNSAT)
-            return fork_memory_access(call, address_sym.v, size, true, values);
+
+        if (values.size() > 1 && result == bw::Result::UNSAT) {
+            builder->SetInsertPoint(call.getNextNode());
+            auto *address_type = llvm::dyn_cast<llvm::IntegerType>(address->getType());
+            VEXA_ASSERT(address_type);
+
+            llvm::Value *val = call.getOperand(2);
+            vexa::dual_value val_sym = VEXA_VAL(val);
+            VEXA_ASSERT(val_sym.v->size() == val->getType()->getPrimitiveSizeInBits());
+
+            for (size_t i = 0; i < values.size(); ++i) {
+                vexa::value *curr_addr = symex->value(values[i]);
+                vexa::pointer *curr_ptr = cpu->calculate_pointer(curr_addr);
+                vexa::dual_pointer curr_page = cpu->get_page(curr_addr);
+
+                llvm::Value *curr_gep =
+                    builder
+                        ->inbounds_gep(
+                            builder->getInt8Ty(),
+                            curr_page.l,
+                            llvm::ConstantInt::get(address_type, vexa::value::as_uint64(values[i])))
+                        .l;
+
+                llvm::Value *cond_l = builder->CreateICmpEQ(
+                    address,
+                    llvm::ConstantInt::get(address_type, vexa::value::as_uint64(values[i])));
+
+                llvm::Value *curr_old_val = builder->CreateLoad(builder->getIntNTy(size), curr_gep);
+                llvm::Value *curr_new_val = builder->CreateSelect(cond_l, val, curr_old_val);
+                builder->CreateStore(curr_new_val, curr_gep);
+
+                vexa::value *curr_old_sym = memory->read(curr_ptr, size);
+                vexa::value *curr_cond_v = (*address_sym.v == *curr_addr);
+                vexa::value *curr_new_sym = curr_cond_v->ite(*val_sym.v, *curr_old_sym)->simplify();
+                memory->write(curr_ptr, curr_new_sym);
+            }
+
+            call.replaceAllUsesWith(call.getArgOperand(0));
+            return nullptr;
+        }
+
+        if (values.size() == 1) {
+            symex->set(address, symex->value(values.front()));
+        }
     }
 
     builder->SetInsertPoint(call.getNextNode());
@@ -186,12 +235,10 @@ llvm::BasicBlock *vexa::cpu::emulator::write_memory_intrinsic(llvm::CallInst &ca
     vexa::pointer *ptr_sym = vexa::to_ptr(ptr.v);
     VEXA_ASSERT(ptr_sym);
 
-    // get value operand expression
     llvm::Value *val = call.getOperand(2);
     vexa::dual_value val_sym = VEXA_VAL(val);
     VEXA_ASSERT(val_sym.v->size() == val->getType()->getPrimitiveSizeInBits());
 
-    // create actual store
     run(builder->CreateStore(val, ptr.l));
     call.replaceAllUsesWith(call.getArgOperand(0));
     return nullptr;
@@ -200,15 +247,77 @@ llvm::BasicBlock *vexa::cpu::emulator::write_memory_intrinsic(llvm::CallInst &ca
 llvm::BasicBlock *vexa::cpu::emulator::read_memory_intrinsic(llvm::CallInst &call, size_t size)
 {
     // get pointer operand expression
+<<<<<<< Updated upstream
     llvm::Value *val = call.getOperand(1);
     vexa::dual_value val_sym = VEXA_VAL(val);
     val_sym.v->simplify();
+=======
+    llvm::Value *addr = call.getOperand(1);
+    vexa::dual_value addr_sym = VEXA_VAL(addr);
+    addr_sym.v = addr_sym.v->simplify();
+>>>>>>> Stashed changes
 
     if (val_sym.v->is_symbolic() && !cpu->instruction.IsControlFlow()) {
         bw::Result result;
+<<<<<<< Updated upstream
         std::vector<bw::Term> values = val_sym.v->possible_values(cpu->path_constraints, &result);
         if (values.size() > 1 && result == bw::Result::UNSAT)
             return fork_memory_access(call, val_sym.v, size, false, values);
+=======
+        std::vector<bw::Term> values = addr_sym.v->possible_values(cpu->path_constraints, &result);
+        if (values.size() > 1 && result == bw::Result::UNSAT) {
+            builder->SetInsertPoint(call.getNextNode());
+            auto *address_type = llvm::dyn_cast<llvm::IntegerType>(addr->getType());
+            VEXA_ASSERT(address_type);
+
+            vexa::value *first_addr = symex->value(values.front());
+            vexa::pointer *first_ptr = cpu->calculate_pointer(first_addr);
+            vexa::dual_pointer first_page = cpu->get_page(first_addr);
+            llvm::Value *first_gep =
+                builder
+                    ->inbounds_gep(
+                        builder->getInt8Ty(),
+                        first_page.l,
+                        llvm::ConstantInt::get(
+                            address_type, vexa::value::as_uint64(values.front())))
+                    .l;
+            llvm::Value *first_load = builder->CreateLoad(builder->getIntNTy(size), first_gep);
+            vexa::value *first_sym = memory->read(first_ptr, size);
+            symex->set(first_load, first_sym);
+            llvm::Value *final_load = first_load;
+            vexa::value *final_sym = first_sym;
+
+            for (size_t i = 1; i < values.size(); ++i) {
+                vexa::value *curr_addr = symex->value(values[i]);
+                vexa::pointer *curr_ptr = cpu->calculate_pointer(curr_addr);
+                vexa::dual_pointer curr_page = cpu->get_page(curr_addr);
+                llvm::Value *curr_gep =
+                    builder
+                        ->inbounds_gep(
+                            builder->getInt8Ty(),
+                            curr_page.l,
+                            llvm::ConstantInt::get(address_type, vexa::value::as_uint64(values[i])))
+                        .l;
+                llvm::Value *curr_load = builder->CreateLoad(builder->getIntNTy(size), curr_gep);
+                vexa::value *curr_sym = memory->read(curr_ptr, size);
+                symex->set(curr_load, curr_sym);
+                llvm::Value *cond_l = builder->CreateICmpEQ(
+                    addr, llvm::ConstantInt::get(address_type, vexa::value::as_uint64(values[i])));
+                final_load = builder->CreateSelect(cond_l, curr_load, final_load);
+
+                vexa::value *cond_v = (*addr_sym.v == *curr_addr);
+                final_sym = cond_v->ite(*curr_sym, *final_sym);
+            }
+
+            final_sym = final_sym->simplify();
+            symex->set(final_load, final_sym);
+            call.replaceAllUsesWith(final_load);
+            return nullptr;
+        }
+        if (values.size() == 1) {
+            symex->set(addr, symex->value(values.front()));
+        }
+>>>>>>> Stashed changes
     }
 
     builder->SetInsertPoint(call.getNextNode());

@@ -34,7 +34,7 @@ vexa::pointer *vexa::symex::pointer(uint64_t value, std::shared_ptr<vexa::mem_pa
 
 vexa::value *vexa::symex::value(bw::Term e)
 {
-    values.emplace_back(context, specialize(std::move(e)), *term_manager, *solver);
+    values.emplace_back(context, std::move(e), *term_manager, *solver);
     return &values.back();
 }
 
@@ -78,8 +78,6 @@ vexa::value *vexa::symex::get(llvm::Value *v)
 void vexa::symex::set(llvm::Value *v, vexa::value *e)
 {
     vars[v] = e;
-    if (!specialized_vars.empty())
-        specialized_vars.erase(v);
 }
 
 void vexa::symex::clear()
@@ -90,6 +88,7 @@ void vexa::symex::clear()
     values.clear();
 }
 
+<<<<<<< Updated upstream
 void vexa::symex::specialize(const bw::Term &from, const bw::Term &to)
 {
     auto it = substitutions.find(from);
@@ -116,6 +115,8 @@ bw::Term vexa::symex::specialize(bw::Term term)
     return term;
 }
 
+=======
+>>>>>>> Stashed changes
 bool vexa::symex::is_sync(llvm::Value *v)
 {
     return vars.contains(v);

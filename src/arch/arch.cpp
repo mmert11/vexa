@@ -134,22 +134,23 @@ void vexa::cpu::write_register(vexa::reg_t r, vexa::value *val)
     memory->write(ptr, val);
 }
 
+int stack_size = 32768;
 void vexa::cpu::run(uint64_t pc)
 {
     // initialize stack
-    //      %stack = alloca i8, i64 8192
+    //      %stack = alloca i8, i64 $stack_size
     //
     std::shared_ptr<mem_page> stack_page = memory->allocate();
     llvm::AllocaInst *stack =
-        builder->CreateAlloca(builder->getInt8Ty(), builder->getIntN(64, 8192), "stack");
+        builder->CreateAlloca(builder->getInt8Ty(), builder->getIntN(64, stack_size), "stack");
     symex->set(stack, symex->pointer(symex->concrete(0, 64), stack_page));
 
     // stack pointer
-    //      %stack_ptr = getelementptr inbounds i8, ptr %stack, i64 4096
+    //      %stack_ptr = getelementptr inbounds i8, ptr %stack, i64 $(stack_size / 2)
     //
     llvm::Value *stack_ptr_l = builder->CreateInBoundsGEP(
-        builder->getInt8Ty(), stack, builder->getIntN(64, 4096), "stack_ptr");
-    vexa::pointer *stack_ptr_v = symex->pointer(4096, stack_page);
+        builder->getInt8Ty(), stack, builder->getIntN(64, stack_size / 2), "stack_ptr");
+    vexa::pointer *stack_ptr_v = symex->pointer(stack_size / 2, stack_page);
     symex->set(stack_ptr_l, stack_ptr_v);
     stack_ptr = {stack_ptr_l, stack_ptr_v};
 
@@ -628,7 +629,7 @@ vexa::dual_pointer vexa::cpu::get_page(vexa::value *value)
 {
     int64_t addr = static_cast<int64_t>(value->as_uint64());
 
-    if (addr >= -4096 && addr < 4096)
+    if (addr >= (-stack_size) / 2 && addr < stack_size / 2)
         return stack_ptr;
 
     return mem_ptr;
@@ -651,15 +652,33 @@ vexa::dual_value vexa::cpu::value_to_pointer(llvm::Value *addr)
     // get value and simplify
     vexa::dual_value dv = VEXA_VAL(addr);
     vexa::value *v = dv.v;
+<<<<<<< Updated upstream
     v->simplify();
+=======
+
+    if (v->is_symbolic())
+        v = v->simplify(path_constraints);
+>>>>>>> Stashed changes
 
     vexa::dual_value ptr;
     if (v->is_concrete()) {
-        vexa::dual_pointer page = get_page(dv.v);
-        ptr = builder->inbounds_gep(builder->getInt8Ty(), page.l, addr);
+        vexa::dual_pointer page = get_page(v);
+        ptr = builder->inbounds_gep(builder->getInt8Ty(), page.l, llvm::ConstantInt::get(addr->getType(), v->as_uint64()));
     }
     else {
+<<<<<<< Updated upstream
         ptr = builder->inttoptr(addr, builder->getPtrTy(), global_memory);
+=======
+        auto values = v->possible_values(path_constraints);
+
+        if (!values.empty()) {
+            vexa::dual_pointer page = get_page(symex->value(values.back()));
+            ptr = builder->inbounds_gep(builder->getInt8Ty(), page.l, llvm::ConstantInt::get(addr->getType(), v->as_uint64()));
+        }
+        else {
+            ptr = builder->inttoptr(addr, builder->getPtrTy(), global_memory);
+        }
+>>>>>>> Stashed changes
     }
 
 ret:

@@ -88,6 +88,7 @@ std::vector<uint8_t>
     // MEMORY POINTER
     vexa::global base = global_var(getInt8Ty(), "IMAGE_BASE");
     inlineasm.append("lea rdx, [rip + " + base.name() + "]\n");
+    //inlineasm.append("xor rdx, rdx\n");
 
     // init fsbase
     auto *fsbase = cpu->registers[amd64::FSBASE];

@@ -61,12 +61,6 @@ class cpu
       private:
         llvm::BasicBlock *write_memory_intrinsic(llvm::CallInst &intrinsic_call, size_t size);
         llvm::BasicBlock *read_memory_intrinsic(llvm::CallInst &intrinsic_call, size_t size);
-        llvm::BasicBlock *fork_memory_access(
-            llvm::CallInst &call,
-            vexa::value *address,
-            size_t size,
-            bool write,
-            const std::vector<bw::Term> &values);
         void write_memory(vexa::pointer *addr, vexa::value *val);
         vexa::value *read_memory(vexa::pointer *addr, int size);
         vexa::value *handle_llvm_intrinsics(
