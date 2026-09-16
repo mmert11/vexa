@@ -3,13 +3,20 @@
 #include "../context.hpp"
 #include "../value/value.hpp"
 
-#include <map>
-
 namespace vexa
 {
+
+struct mem_cell
+{
+    vexa::value *original_val;
+    uint8_t total_size; // in bytes
+    uint8_t which_byte;
+    vexa::value *extracted_cache;
+};
+
 struct mem_page
 {
-    using storage_t = std::unordered_map<uint64_t, std::optional<bw::Term>>;
+    using storage_t = std::unordered_map<uint64_t, mem_cell>;
 
     mem_page(uint64_t size) : memory(std::make_shared<storage_t>())
     {
@@ -17,7 +24,7 @@ struct mem_page
             memory->reserve(size);
     }
 
-    const std::optional<bw::Term> *find(uint64_t address) const
+    const mem_cell *find(uint64_t address) const
     {
         auto it = memory->find(address);
         if (it != memory->end())
@@ -26,30 +33,34 @@ struct mem_page
         return initial == initial_memory.end() ? nullptr : &initial->second;
     }
 
-    void initialize(uint64_t address, bw::Term value)
+    void initialize(uint64_t address, vexa::value *value)
     {
         if (sealed) {
-            write(address, std::move(value));
+            write(address, value);
             return;
         }
-        initial_memory.insert_or_assign(address, std::move(value));
+        initial_memory.insert_or_assign(address, mem_cell{value, 1, 0});
     }
 
     void seal() { sealed = true; }
 
-    void write(uint64_t address, bw::Term value)
+    void write(uint64_t address, vexa::value* value)
     {
         if (!memory.unique())
             memory = std::make_shared<storage_t>(*memory);
-        memory->insert_or_assign(address, std::move(value));
+        memory->insert_or_assign(address, mem_cell{value, 1, 0});
+    }
+
+    void write(uint64_t address, mem_cell cell)
+    {
+        if (!memory.unique())
+            memory = std::make_shared<storage_t>(*memory);
+        memory->insert_or_assign(address, cell);
     }
 
     friend class memory;
     storage_t initial_memory;
     std::shared_ptr<storage_t> memory;
-
-    
-
     bool sealed = false;
 };
 
@@ -80,5 +91,7 @@ class memory
   private:
     vexa::context *context;
     std::vector<std::shared_ptr<mem_page>> pages;
+    using hash_ty = std::hash<bw::Term>;
+    hash_ty hash;
 };
 } // namespace vexa

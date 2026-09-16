@@ -134,8 +134,10 @@ bool vexa::passes::constant_propagation::run(llvm::Function *function)
     value_simplifier simplify_once;
     memory_propagation_result memory = concretize_memory_loads(function, DT, LI, simplify_once);
 
+    std::vector<llvm::Instruction *> all_seeds = memory.fold_seeds;
+
     std::vector<llvm::Instruction *> dead_ssa_values =
-        propagate_ssa_values(function, LI, simplify_once, memory.fold_seeds);
+        propagate_ssa_values(function, LI, simplify_once, all_seeds);
 
     erase_dead_instructions(dead_ssa_values);
     erase_dead_instructions(memory.dead_loads);

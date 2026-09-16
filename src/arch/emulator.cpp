@@ -10,9 +10,8 @@ void vexa::cpu::emulator::run_block(llvm::BasicBlock *BB)
         if (I.isTerminator())
             continue;
 
-        llvm::Value *I_ptr = &I;
-        vexa::value *res = visit(I);
-        symex->set(I_ptr, res);
+        llvm::Instruction *I_ptr = &I;
+        run(I_ptr);
 
         if (forked_block == BB) {
             forked_block = nullptr;
@@ -20,155 +19,75 @@ void vexa::cpu::emulator::run_block(llvm::BasicBlock *BB)
         }
     }
 }
+
 void vexa::cpu::emulator::write_memory(vexa::pointer *addr, vexa::value *val)
 {
+    addr->simplify();
+
+    if (addr->is_symbolic()) {
+        bw::Result result;
+        std::vector<bw::Term> addresses = addr->possible_values(cpu->path_constraints, &result);
+
+        if (addresses.size() == 1) {
+            vexa::pointer *ptr = cpu->calculate_pointer(symex->value(addresses.front()));
+            memory->write(ptr, val);
+            return;
+        }
+
+        if (addresses.size() > 1 && result == bw::Result::UNSAT) {
+            int size = val->size();
+
+            for (size_t i = 0; i < addresses.size(); ++i) {
+                vexa::value *curr_addr = symex->value(addresses[i]);
+                vexa::pointer *curr_ptr = cpu->calculate_pointer(curr_addr);
+
+                vexa::value *old_val = memory->read(curr_ptr, size);
+                vexa::value *cond = (*addr == *curr_addr);
+                vexa::value *updated_val = cond->ite(*val, *old_val);
+
+                memory->write(curr_ptr, updated_val);
+            }
+            return;
+        }
+    }
+
     memory->write(addr, val);
 }
 
 vexa::value *vexa::cpu::emulator::read_memory(vexa::pointer *addr, int size)
 {
+    addr->simplify();
+
+    if (addr->is_symbolic()) {
+        bw::Result result;
+        std::vector<bw::Term> addresses = addr->possible_values(cpu->path_constraints, &result);
+
+        if (addresses.size() == 1) {
+            vexa::pointer *ptr = cpu->calculate_pointer(symex->value(addresses.front()));
+            return memory->read(ptr, size);
+        }
+
+        if (addresses.size() > 1 && result == bw::Result::UNSAT) {
+            vexa::value *first_addr = symex->value(addresses.front());
+            vexa::pointer *first_ptr = cpu->calculate_pointer(first_addr);
+            vexa::value *final_sym = memory->read(first_ptr, size);
+
+            for (size_t i = 1; i < addresses.size(); ++i) {
+                vexa::value *curr_addr = symex->value(addresses[i]);
+                vexa::pointer *curr_ptr = cpu->calculate_pointer(curr_addr);
+
+                vexa::value *curr_sym = memory->read(curr_ptr, size);
+                vexa::value *cond = (*addr == *curr_addr);
+                final_sym = cond->ite(*curr_sym, *final_sym);
+            }
+
+            return final_sym;
+        }
+    }
+
     return memory->read(addr, size);
 }
 
-<<<<<<< Updated upstream
-llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
-    llvm::CallInst &call,
-    vexa::value *address,
-    size_t size,
-    bool write,
-    const std::vector<bw::Term> &values)
-{
-    VEXA_ASSERT(values.size() > 1);
-    llvm::BasicBlock *source = call.getParent();
-    llvm::Instruction *continuation = call.getNextNode();
-    VEXA_ASSERT(source && continuation);
-
-    // insert temporary terminator at the end of the basic block
-    //
-    bool temporary_terminator = source->getTerminator() == nullptr;
-    if (temporary_terminator) {
-        builder->SetInsertPoint(source);
-        builder->CreateUnreachable();
-    }
-
-    // split the basic block right after remill's intrinsic call
-    //
-    llvm::BasicBlock *suffix =
-        source->splitBasicBlock(continuation, source->getName() + (write ? ".write" : ".read"));
-    // erase the terminators
-    //
-    source->getTerminator()->eraseFromParent();
-    if (temporary_terminator)
-        suffix->getTerminator()->eraseFromParent();
-    //
-
-    // clone the split basic block for every possible address
-    //
-    std::vector<llvm::BasicBlock *> possible_blocks(values.size());
-    possible_blocks.front() = suffix;
-    for (size_t i = 1; i < values.size(); i++) {
-        llvm::ValueToValueMapTy map;
-        possible_blocks[i] = llvm::CloneBasicBlock(
-            suffix,
-            map,
-            std::format(".{}_{}", write ? "write" : "read", vexa::value::as_uint64(values[i])),
-            cpu->vexa_lifted);
-        // remap operands
-        //
-        for (llvm::Instruction &instruction : *possible_blocks[i])
-            llvm::RemapInstruction(
-                &instruction, map, llvm::RF_NoModuleLevelChanges | llvm::RF_IgnoreMissingLocals);
-    }
-    if (write)
-        call.replaceAllUsesWith(call.getArgOperand(0));
-
-    // create switch case
-    //
-    auto *address_type = llvm::dyn_cast<llvm::IntegerType>(call.getArgOperand(1)->getType());
-    VEXA_ASSERT(address_type);
-    llvm::BasicBlock *default_block = builder->basic_block();
-    builder->SetInsertPoint(default_block);
-    builder->CreateUnreachable();
-    builder->SetInsertPoint(source);
-
-    llvm::SwitchInst *dispatch =
-        builder->CreateSwitch(call.getArgOperand(1), default_block, values.size());
-    auto base_snapshot = cpu->take_snapshot(cpu->instruction.next_pc, cpu->block);
-
-    auto execute = [&](size_t index) {
-        // reset state to the beginning
-        //
-        cpu->restore_snapshot(base_snapshot);
-
-        // initialize for the execution
-        //
-        const bw::Term &candidate = values[index];
-        uint64_t concrete_address = vexa::value::as_uint64(candidate);
-        llvm::BasicBlock *case_block = builder->basic_block(
-            std::format("{}_{:x}", write ? "write" : "read", concrete_address));
-        dispatch->addCase(llvm::ConstantInt::get(address_type, concrete_address), case_block);
-
-        // add to path constraints
-        cpu->path_constraints.push_back(
-            context->term_manager.mk_term(bw::Kind::EQUAL, {address->as_expr(), candidate}));
-        symex->specialize(address->as_expr(), candidate);
-
-        // experimental solution for vmp 3.3.1
-        // force simplify the registers using solver
-        //
-        for (const auto &[reg_id, reg] : cpu->registers) {
-            if (reg->parent)
-                continue;
-            vexa::value *value = cpu->read_register(reg_id)->simplify(cpu->path_constraints);
-            if (value->is_concrete())
-                cpu->write_register(reg_id, value);
-        }
-
-        vexa::value *solved = symex->value(candidate);
-        vexa::dual_pointer page = cpu->get_page(solved);
-        builder->SetInsertPoint(case_block);
-        vexa::dual_pointer resolved =
-            builder
-                ->inbounds_gep(
-                    builder->getInt8Ty(),
-                    page.l,
-                    llvm::ConstantInt::get(address_type, concrete_address))
-                .to_ptr();
-
-        // memory write
-        if (write)
-            run(builder->CreateStore(call.getOperand(2), resolved.l));
-        // memory read
-        else {
-            auto *load = builder->CreateLoad(builder->getIntNTy(size), resolved.l);
-            symex->set(load, memory->read(resolved.v, size));
-            for (llvm::Instruction &instruction : *possible_blocks[index])
-                instruction.replaceUsesOfWith(&call, load);
-        }
-
-        builder->CreateBr(possible_blocks[index]);
-        builder->SetInsertPoint(possible_blocks[index]);
-        run_block(possible_blocks[index]);
-        builder->SetInsertPoint(possible_blocks[index]);
-    };
-
-    // execute the every address case except for the first one
-    //
-    for (size_t i = values.size(); i-- > 1;) {
-        execute(i);
-        cpu->unexplored_paths.push(
-            cpu->take_snapshot(cpu->instruction.next_pc, builder->GetInsertBlock()));
-    }
-
-    execute(0);
-    forked_block = source;
-    LOG_INFO(logger, "Path fork by symbolic memory {}", write ? "write" : "read");
-    context->event_handler(vexa::event_kind::PATH_FORKING);
-    return builder->GetInsertBlock();
-}
-
-=======
->>>>>>> Stashed changes
 llvm::BasicBlock *vexa::cpu::emulator::write_memory_intrinsic(llvm::CallInst &call, size_t size)
 {
     // get pointer operand expression
@@ -176,11 +95,7 @@ llvm::BasicBlock *vexa::cpu::emulator::write_memory_intrinsic(llvm::CallInst &ca
     vexa::dual_value address_sym = VEXA_VAL(address);
     address_sym.v = address_sym.v->simplify(cpu->path_constraints);
 
-<<<<<<< Updated upstream
-    if (address_sym.v->is_symbolic() && !cpu->instruction.IsControlFlow()) {
-=======
     if (address_sym.v->is_symbolic()) {
->>>>>>> Stashed changes
         bw::Result result;
         std::vector<bw::Term> values =
             address_sym.v->possible_values(cpu->path_constraints, &result);
@@ -247,23 +162,12 @@ llvm::BasicBlock *vexa::cpu::emulator::write_memory_intrinsic(llvm::CallInst &ca
 llvm::BasicBlock *vexa::cpu::emulator::read_memory_intrinsic(llvm::CallInst &call, size_t size)
 {
     // get pointer operand expression
-<<<<<<< Updated upstream
-    llvm::Value *val = call.getOperand(1);
-    vexa::dual_value val_sym = VEXA_VAL(val);
-    val_sym.v->simplify();
-=======
     llvm::Value *addr = call.getOperand(1);
     vexa::dual_value addr_sym = VEXA_VAL(addr);
     addr_sym.v = addr_sym.v->simplify();
->>>>>>> Stashed changes
 
-    if (val_sym.v->is_symbolic() && !cpu->instruction.IsControlFlow()) {
+    if (addr_sym.v->is_symbolic()) {
         bw::Result result;
-<<<<<<< Updated upstream
-        std::vector<bw::Term> values = val_sym.v->possible_values(cpu->path_constraints, &result);
-        if (values.size() > 1 && result == bw::Result::UNSAT)
-            return fork_memory_access(call, val_sym.v, size, false, values);
-=======
         std::vector<bw::Term> values = addr_sym.v->possible_values(cpu->path_constraints, &result);
         if (values.size() > 1 && result == bw::Result::UNSAT) {
             builder->SetInsertPoint(call.getNextNode());
@@ -317,11 +221,10 @@ llvm::BasicBlock *vexa::cpu::emulator::read_memory_intrinsic(llvm::CallInst &cal
         if (values.size() == 1) {
             symex->set(addr, symex->value(values.front()));
         }
->>>>>>> Stashed changes
     }
 
     builder->SetInsertPoint(call.getNextNode());
-    vexa::dual_value ptr = cpu->value_to_pointer(val);
+    vexa::dual_value ptr = cpu->value_to_pointer(addr);
     vexa::pointer *ptr_sym = vexa::to_ptr(ptr.v);
     VEXA_ASSERT(ptr_sym);
 
@@ -432,6 +335,9 @@ vexa::value *vexa::cpu::emulator::visitCallInst(llvm::CallInst &I)
 vexa::dual_value vexa::cpu::emulator::run(llvm::Instruction *I)
 {
     vexa::value *res = visit(I);
+    if (!res->simplified && res->is_symbolic() && !cpu->path_constraints.empty() && false) {
+        res->simplify(cpu->path_constraints);
+    }
     symex->set(I, res);
     return vexa::dual_value(I, res);
 }

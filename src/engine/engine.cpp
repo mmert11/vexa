@@ -119,7 +119,6 @@ std::vector<uint8_t> vexa::engine::recompile(bool optimize)
 
 void vexa::engine::write_memory(uint64_t address, std::span<const uint8_t> buffer)
 {
-    bw::Sort byte_sort = context->term_manager.mk_bv_sort(8);
     for (unsigned int i = 0; i < buffer.size(); i++) {
         /*
         vexa::value* addr = symex->concrete(address + i, 64);
@@ -128,7 +127,7 @@ void vexa::engine::write_memory(uint64_t address, std::span<const uint8_t> buffe
         */
 
         cpu->global_memory->initialize(
-            address + i, context->term_manager.mk_bv_value_uint64(byte_sort, buffer[i]));
+            address + i, symex->concrete(buffer[i],8));
     }
 }
 
@@ -175,11 +174,8 @@ void vexa::engine::map_binary(vexa::binary &binary)
             if (v_size <= size)
                 continue;
 
-            const bw::Sort byte_sort = context->term_manager.mk_bv_sort(8);
-            const bw::Term zero = context->term_manager.mk_bv_zero(byte_sort);
-
             for (uint64_t offset = size; offset < v_size; ++offset)
-                cpu->global_memory->initialize(v_addr + offset, zero);
+                cpu->global_memory->initialize(v_addr + offset, symex->concrete(0, 8));
         }
     }
     else if (binary.is_pe()) {
