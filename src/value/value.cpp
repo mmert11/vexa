@@ -28,7 +28,9 @@ std::vector<bw::Term>
     while (solved_values.size() < 20) {
         check = solver->check_sat(assumptions);
         if (check != bw::Result::SAT)
+        {
             break;
+        }
 
         bw::Term evaluated = solver->get_value(term);
         assumptions.push_back(term_manager->mk_term(bw::Kind::DISTINCT, {term, evaluated}));

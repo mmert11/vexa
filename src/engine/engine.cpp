@@ -6,6 +6,7 @@
 #include <vexa/passes/state2alloca.hpp>
 #include <vexa/passes/state_cleanup.hpp>
 #include <vexa/passes/memory_scalarizer.hpp>
+#include <vexa/passes/predicate_solver.hpp>
 
 #include <llvm/Support/FileSystem.h>
 #include <llvm/Support/raw_ostream.h>
@@ -71,6 +72,7 @@ void vexa::engine::optimize()
         manager.add_pass<passes::state_cleanup>();
 
     manager.add_pass<passes::memory_scalarizer>();
+    manager.add_pass<passes::predicate_solver>();
 
     auto start = std::chrono::high_resolution_clock::now();
     manager.run(cpu->vexa_lifted);

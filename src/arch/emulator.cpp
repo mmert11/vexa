@@ -335,9 +335,6 @@ vexa::value *vexa::cpu::emulator::visitCallInst(llvm::CallInst &I)
 vexa::dual_value vexa::cpu::emulator::run(llvm::Instruction *I)
 {
     vexa::value *res = visit(I);
-    if (!res->simplified && res->is_symbolic() && !cpu->path_constraints.empty() && false) {
-        res->simplify(cpu->path_constraints);
-    }
     symex->set(I, res);
     return vexa::dual_value(I, res);
 }

@@ -20,6 +20,7 @@ class symex
     vexa::value *value(bw::Term e);
     vexa::value *get(llvm::Value *v);
     void set(llvm::Value *v, vexa::value *e);
+    void erase(llvm::Value *v);
     void clear();
     bool is_sync(llvm::Value *v);
     

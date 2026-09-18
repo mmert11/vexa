@@ -31,7 +31,7 @@ class value
     value(vexa::context *c, bw::Term e, bw::TermManager &tm, bw::Bitwuzla &bzla);
 
     std::vector<bw::Term>
-        possible_values(const std::vector<bw::Term> &constraints, bw::Result *result = nullptr);
+        possible_values(const std::vector<bw::Term> &constraints = {}, bw::Result *result = nullptr);
     value *simplify();
     value *simplify(const std::vector<bw::Term> &constraints);
     bw::Term as_expr() const;
@@ -95,9 +95,8 @@ class value
     bw::Term term;
     bw::TermManager *term_manager;
     bw::Bitwuzla *solver;
-    bool simplified = false;
-
   private:
+    bool simplified = false;
 };
 
 class pointer : public value

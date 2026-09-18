@@ -51,8 +51,13 @@ vexa::value *vexa::symex::get(llvm::Value *v)
     if (auto *C = llvm::dyn_cast<llvm::ConstantInt>(v))
         return concrete(C->getZExtValue(), C->getBitWidth());
 
-    // experimental
-    // return context->cpu->emulate->run(llvm::dyn_cast<llvm::Instruction>(v)).v;
+    if (auto *inst = llvm::dyn_cast<llvm::Instruction>(v)) {
+        if (!llvm::isa<llvm::LoadInst>(inst) && !llvm::isa<llvm::StoreInst>(inst)) {
+            vexa::value *evaluated = context->cpu->emulate->visit(inst);
+            vars[inst] = evaluated;
+            return evaluated;
+        }
+    }
 
     v->print(llvm::outs());
     llvm::outs() << "\n";
@@ -63,6 +68,11 @@ vexa::value *vexa::symex::get(llvm::Value *v)
 void vexa::symex::set(llvm::Value *v, vexa::value *e)
 {
     vars[v] = e;
+}
+
+void vexa::symex::erase(llvm::Value *v)
+{
+    vars.erase(v);
 }
 
 void vexa::symex::clear()
