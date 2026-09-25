@@ -30,8 +30,9 @@ class value
     value(vexa::context *c, kind k);
     value(vexa::context *c, bw::Term e, bw::TermManager &tm, bw::Bitwuzla &bzla);
 
-    std::vector<bw::Term>
-        possible_values(const std::vector<bw::Term> &constraints = {}, bw::Result *result = nullptr);
+    std::vector<bw::Term> possible_values(
+        const std::vector<bw::Term> &constraints = {},
+        bw::Result *result = nullptr);
     value *simplify();
     value *simplify(const std::vector<bw::Term> &constraints);
     bw::Term as_expr() const;
@@ -87,7 +88,7 @@ class value
           simplified(other.simplified)
     {}
 
-  public:
+  private:
     vexa::value *unary(bw::Kind op) const;
     vexa::value *binary(bw::Kind op, const value &rhs) const;
     vexa::context *context;
@@ -95,7 +96,6 @@ class value
     bw::Term term;
     bw::TermManager *term_manager;
     bw::Bitwuzla *solver;
-  private:
     bool simplified = false;
 };
 

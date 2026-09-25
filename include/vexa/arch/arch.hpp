@@ -58,6 +58,12 @@ class cpu
         vexa::value *visitExtractElementInst(llvm::ExtractElementInst &I);
 
       private:
+        llvm::BasicBlock *fork_memory_access(
+            llvm::CallInst &call,
+            vexa::value *address,
+            size_t size,
+            bool write,
+            const std::vector<bw::Term> &values);
         llvm::BasicBlock *write_memory_intrinsic(llvm::CallInst &intrinsic_call, size_t size);
         llvm::BasicBlock *read_memory_intrinsic(llvm::CallInst &intrinsic_call, size_t size);
         void write_memory(vexa::pointer *addr, vexa::value *val);

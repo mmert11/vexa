@@ -48,7 +48,7 @@ bool vexa::ir::Oz::run(llvm::Function *func)
     llvm::LoopAnalysisManager LAM;
     llvm::FunctionAnalysisManager FAM;
     llvm::CGSCCAnalysisManager CGAM;
-    llvm::ModuleAnalysisManager MAM; //
+    llvm::ModuleAnalysisManager MAM;
     llvm::PassBuilder PB;
 
     PB.registerModuleAnalyses(MAM);
@@ -86,7 +86,7 @@ void vexa::ir::pass_manager::run(llvm::Function *func)
     } while (repeat);
 
     // reorder the blocks
-    llvm::ReversePostOrderTraversal<llvm::Function *> RPOT(context->builder->get_function());
+    llvm::ReversePostOrderTraversal<llvm::Function *> RPOT(func);
     std::vector<llvm::BasicBlock *> OrderedBlocks;
     for (auto *BB : RPOT)
         OrderedBlocks.push_back(BB);

@@ -1,4 +1,6 @@
+#include "vexa/arch/arch.hpp"
 #include "bitwuzla/cpp/sat_solver.h"
+#include "vexa/arch/amd64.hpp"
 #include <vexa/vexa.h>
 
 #include <llvm/ADT/SmallVector.h>
@@ -401,7 +403,7 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
             return internal_lifter_status::successful;
         }
 
-        LOG_WARNING(logger, "Solving -> {}", next->as_expr().str());
+        LOG_WARNING(logger, "Solving -> {}", next->as_expr().str(16));
 
         auto possible_addrs = next->possible_values(path_constraints);
         for (auto &possible_addr : possible_addrs) {
@@ -411,6 +413,7 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
         // ONE PATH
         if (possible_addrs.size() == 1) {
             PC = vexa::value::as_uint64(possible_addrs.back());
+            solve_cpu_context();
             return internal_lifter_status::successful;
         }
 
@@ -430,8 +433,6 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
         LOG_DEBUG(logger, "{}", next->as_expr().str());
         LOG_ERROR(logger, "Unresolved indirect jump");
         return internal_lifter_status::explore_other_paths;
-
-        // THROW("Unresolved jump");
     }
     else if (inst.function.starts_with("CMOV") && context->get_option(option::FORK_AT_CMOVS))
         handle_conditional_moves(inst, block);
@@ -544,15 +545,29 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
 
 void vexa::cpu::solve_cpu_context()
 {
-    for (const auto &[reg_id, reg] : registers) {
-        if (reg->parent || reg->size < 8)
-            continue;
+    context->bitwuzla->push(1);
+    for (const auto &constraint : path_constraints) {
+        context->bitwuzla->assert_formula(constraint);
+    }
 
-        vexa::value *value = read_register(reg_id)->simplify(path_constraints);
+    std::vector<vexa::reg_t> regs = {
+        vexa::amd64::RAX, vexa::amd64::RBX, vexa::amd64::RCX, vexa::amd64::RDX, vexa::amd64::RSI,
+        vexa::amd64::RDI, vexa::amd64::RSP, vexa::amd64::RBP, vexa::amd64::R8,  vexa::amd64::R9,
+        vexa::amd64::R10, vexa::amd64::R11, vexa::amd64::R12, vexa::amd64::R13, vexa::amd64::R14,
+        vexa::amd64::R15, vexa::amd64::ZF,  vexa::amd64::SF,  vexa::amd64::CF,  vexa::amd64::PF,
+        vexa::amd64::OF,  vexa::amd64::AF};
+
+    for (const auto &reg_id : regs) {
+        auto reg = get_register(reg_id);
+        //LOG_DEBUG(logger, "Resolving {}", reg->name);
+
+        vexa::value *value = read_register(reg_id)->simplify({});
         if (value->simplify()->is_concrete()) {
             write_register(reg_id, value);
         }
     }
+
+    context->bitwuzla->pop(1);
 }
 
 void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t fallthrough_pc)
@@ -566,13 +581,13 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
             if (taken) {
                 // OPAQUE TAKEN
                 PC = jump_pc;
-                path_constraints.push_back(condition.v->as_expr_bool());
+                //path_constraints.push_back(condition.v->as_expr_bool());
                 EVENT_HANDLER(event_kind::CONDITIONAL_TAKEN);
             }
             else {
                 // OPAQUE NOT TAKEN
                 PC = fallthrough_pc;
-                path_constraints.push_back((!*condition.v)->as_expr());
+                //path_constraints.push_back((!*condition.v)->as_expr());
                 EVENT_HANDLER(event_kind::CONDITIONAL_FALLTHROUGH);
             }
 
@@ -597,7 +612,7 @@ void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t
     //
     restore_snapshot(std::move(base_snapshot));
 
-     // create conditional jump
+    // create conditional jump
     //
     builder->CreateCondBr(condition.l, jump_bb, fallthrough_bb);
     builder->SetInsertPoint(jump_bb);
@@ -681,14 +696,18 @@ vexa::dual_value vexa::cpu::value_to_pointer(llvm::Value *addr)
     vexa::dual_value ptr;
     if (v->is_concrete()) {
         vexa::dual_pointer page = get_page(v);
-        ptr = builder->inbounds_gep(builder->getInt8Ty(), page.l, llvm::ConstantInt::get(addr->getType(), v->as_uint64()));
+        ptr = builder->inbounds_gep(
+            builder->getInt8Ty(), page.l, llvm::ConstantInt::get(addr->getType(), v->as_uint64()));
     }
     else {
         auto values = v->possible_values(path_constraints);
 
         if (!values.empty()) {
             vexa::dual_pointer page = get_page(symex->value(values.back()));
-            ptr = builder->inbounds_gep(builder->getInt8Ty(), page.l, llvm::ConstantInt::get(addr->getType(), v->as_uint64()));
+            ptr = builder->inbounds_gep(
+                builder->getInt8Ty(),
+                page.l,
+                llvm::ConstantInt::get(addr->getType(), v->as_uint64()));
         }
         else {
             ptr = builder->inttoptr(addr, builder->getPtrTy(), global_memory);
@@ -725,16 +744,16 @@ bool vexa::cpu::opaque_solver(vexa::value *condition, bool &result)
 
         // check if cond can be false
         if (context->bitwuzla->check_sat({not_cond}) == bw::Result::UNSAT) {
-        // means it cant be false
-        // we solved this branch is always taken
+            // means it cant be false
+            // we solved this branch is always taken
             result = true;
             return true;
         }
 
         // check if cond can be true
         if (context->bitwuzla->check_sat({cond}) == bw::Result::UNSAT) {
-        // means it cant be true
-        // we solved this branch is never taken
+            // means it cant be true
+            // we solved this branch is never taken
             result = false;
             return true;
         }
