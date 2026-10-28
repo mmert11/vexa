@@ -426,19 +426,14 @@ PUSHFQ_94237:                                     ; preds = %entry
   store i32 147227464, ptr %207, align 4
   %208 = tail call i64 @llvm.fshl.i64(i64 %0, i64 %0, i64 60)
   %209 = xor i64 %208, 3458764513820540926
-  %210 = tail call i64 @llvm.fshl.i64(i64 %0, i64 %0, i64 39)
-  %211 = and i64 %210, -15942918602753
-  %212 = tail call i64 @llvm.fshl.i64(i64 %209, i64 %209, i64 4)
-  %213 = tail call i64 @llvm.fshl.i64(i64 %211, i64 %211, i64 25)
-  %214 = add i64 %213, %212
-  %215 = tail call i64 @llvm.fshl.i64(i64 %0, i64 %0, i64 28)
-  %216 = and i64 %215, -7784628225
-  %217 = tail call i64 @llvm.fshl.i64(i64 %216, i64 %216, i64 36)
-  %218 = add i64 %214, %217
-  %219 = getelementptr inbounds nuw i8, ptr %memory, i64 451764
-  store i32 146149192, ptr %219, align 4
-  %220 = getelementptr inbounds nuw i8, ptr %memory, i64 457521
-  store i32 -920322239, ptr %220, align 4
+  %210 = tail call i64 @llvm.fshl.i64(i64 %209, i64 %209, i64 4)
+  %211 = shl i64 %0, 1
+  %212 = and i64 %211, -60
+  %213 = add i64 %210, %212
+  %214 = getelementptr inbounds nuw i8, ptr %memory, i64 451764
+  store i32 146149192, ptr %214, align 4
+  %215 = getelementptr inbounds nuw i8, ptr %memory, i64 457521
+  store i32 -920322239, ptr %215, align 4
   store i32 146149192, ptr %91, align 4
   store i32 29393736, ptr %92, align 4
   store i32 280366924, ptr %93, align 4
@@ -448,7 +443,7 @@ PUSHFQ_94237:                                     ; preds = %entry
   store i32 147227464, ptr %105, align 4
   store i32 146149192, ptr %106, align 4
   store i32 -920322239, ptr %107, align 4
-  store i64 %218, ptr %87, align 8
+  store i64 %213, ptr %87, align 8
   store i32 146149192, ptr %108, align 4
   store i32 29393736, ptr %109, align 4
   store i32 280366924, ptr %110, align 4
@@ -462,8 +457,8 @@ PUSHFQ_94237:                                     ; preds = %entry
   store i32 29393736, ptr %76, align 4
   store i32 -920322239, ptr %85, align 4
   store i32 149848904, ptr %86, align 4
-  %221 = getelementptr inbounds nuw i8, ptr %memory, i64 1138688
-  store i64 -16, ptr %221, align 8
+  %216 = getelementptr inbounds nuw i8, ptr %memory, i64 1138688
+  store i64 -16, ptr %216, align 8
   store i32 146834248, ptr %88, align 4
   store i32 146149192, ptr %89, align 4
   store i32 -920322239, ptr %90, align 4
@@ -486,8 +481,8 @@ PUSHFQ_94237:                                     ; preds = %entry
   br label %common.ret
 
 PUSHFQ_169629:                                    ; preds = %entry
-  %222 = getelementptr inbounds nuw i8, ptr %memory, i64 730389
-  store i32 46170952, ptr %222, align 4
+  %217 = getelementptr inbounds nuw i8, ptr %memory, i64 730389
+  store i32 46170952, ptr %217, align 4
   store i32 46564168, ptr %192, align 4
   store i32 146149192, ptr %193, align 4
   store i32 -920322239, ptr %194, align 4
@@ -497,64 +492,64 @@ PUSHFQ_169629:                                    ; preds = %entry
   store i32 13009736, ptr %168, align 4
   store i32 146149192, ptr %169, align 4
   store i32 -920322239, ptr %170, align 4
-  %223 = getelementptr inbounds nuw i8, ptr %memory, i64 1067468
+  %218 = getelementptr inbounds nuw i8, ptr %memory, i64 1067468
+  store i32 29393736, ptr %218, align 4
+  %219 = getelementptr inbounds nuw i8, ptr %memory, i64 1069200
+  store i32 146149192, ptr %219, align 4
+  %220 = getelementptr inbounds nuw i8, ptr %memory, i64 1071019
+  store i32 29393736, ptr %220, align 4
+  %221 = getelementptr inbounds nuw i8, ptr %memory, i64 1079999
+  %222 = getelementptr inbounds nuw i8, ptr %memory, i64 1072780
+  %223 = getelementptr inbounds nuw i8, ptr %memory, i64 1074580
+  %224 = getelementptr inbounds nuw i8, ptr %memory, i64 1076454
+  store i32 29524808, ptr %222, align 4
   store i32 29393736, ptr %223, align 4
-  %224 = getelementptr inbounds nuw i8, ptr %memory, i64 1069200
-  store i32 146149192, ptr %224, align 4
-  %225 = getelementptr inbounds nuw i8, ptr %memory, i64 1071019
-  store i32 29393736, ptr %225, align 4
-  %226 = getelementptr inbounds nuw i8, ptr %memory, i64 1079999
-  %227 = getelementptr inbounds nuw i8, ptr %memory, i64 1072780
-  %228 = getelementptr inbounds nuw i8, ptr %memory, i64 1074580
-  %229 = getelementptr inbounds nuw i8, ptr %memory, i64 1076454
-  store i32 29524808, ptr %227, align 4
-  store i32 29393736, ptr %228, align 4
-  store i32 32080712, ptr %229, align 4
-  %230 = getelementptr inbounds nuw i8, ptr %memory, i64 1078253
-  store i32 149848904, ptr %230, align 4
-  %231 = getelementptr inbounds nuw i8, ptr %memory, i64 1136648
-  store i64 2040, ptr %231, align 8
-  %232 = getelementptr inbounds nuw i8, ptr %memory, i64 1079967
-  store i8 -99, ptr %232, align 1
-  %233 = getelementptr inbounds nuw i8, ptr %memory, i64 1082025
-  store i16 22337, ptr %233, align 2
-  %234 = getelementptr inbounds nuw i8, ptr %memory, i64 1083940
-  store i16 22081, ptr %234, align 2
-  %235 = getelementptr inbounds nuw i8, ptr %memory, i64 1085884
-  store i16 21825, ptr %235, align 2
-  %236 = getelementptr inbounds nuw i8, ptr %memory, i64 1087875
-  store i16 21569, ptr %236, align 2
-  %237 = getelementptr inbounds nuw i8, ptr %memory, i64 1089776
-  store i16 21313, ptr %237, align 2
-  %238 = getelementptr inbounds nuw i8, ptr %memory, i64 1091727
-  store i16 21057, ptr %238, align 2
-  %239 = getelementptr inbounds nuw i8, ptr %memory, i64 1093696
-  store i16 20801, ptr %239, align 2
-  %240 = getelementptr inbounds nuw i8, ptr %memory, i64 1095634
-  store i16 20545, ptr %240, align 2
-  %241 = getelementptr inbounds nuw i8, ptr %memory, i64 1097146
-  store i8 87, ptr %241, align 1
-  %242 = getelementptr inbounds nuw i8, ptr %memory, i64 1098647
-  store i8 86, ptr %242, align 1
-  %243 = getelementptr inbounds nuw i8, ptr %memory, i64 1100208
-  store i8 85, ptr %243, align 1
-  %244 = getelementptr inbounds nuw i8, ptr %memory, i64 1101727
-  store i8 83, ptr %244, align 1
-  %245 = getelementptr inbounds nuw i8, ptr %memory, i64 1103178
-  store i8 82, ptr %245, align 1
-  %246 = getelementptr inbounds nuw i8, ptr %memory, i64 1104741
-  store i8 81, ptr %246, align 1
-  %247 = getelementptr inbounds nuw i8, ptr %memory, i64 1106210
-  store i8 80, ptr %247, align 1
-  %248 = getelementptr inbounds nuw i8, ptr %memory, i64 1107707
-  store i8 -100, ptr %248, align 1
-  %249 = getelementptr inbounds nuw i8, ptr %memory, i64 1116009
-  store i32 147227464, ptr %249, align 4
-  %250 = getelementptr inbounds nuw i8, ptr %memory, i64 1124969
-  tail call void @llvm.memset.p0.i64(ptr noundef nonnull align 4 dereferenceable(16) %226, i8 -112, i64 16, i1 false)
-  store i32 146149192, ptr %250, align 4
-  %251 = getelementptr inbounds nuw i8, ptr %memory, i64 1130660
-  store i32 -920322239, ptr %251, align 4
+  store i32 32080712, ptr %224, align 4
+  %225 = getelementptr inbounds nuw i8, ptr %memory, i64 1078253
+  store i32 149848904, ptr %225, align 4
+  %226 = getelementptr inbounds nuw i8, ptr %memory, i64 1136648
+  store i64 2040, ptr %226, align 8
+  %227 = getelementptr inbounds nuw i8, ptr %memory, i64 1079967
+  store i8 -99, ptr %227, align 1
+  %228 = getelementptr inbounds nuw i8, ptr %memory, i64 1082025
+  store i16 22337, ptr %228, align 2
+  %229 = getelementptr inbounds nuw i8, ptr %memory, i64 1083940
+  store i16 22081, ptr %229, align 2
+  %230 = getelementptr inbounds nuw i8, ptr %memory, i64 1085884
+  store i16 21825, ptr %230, align 2
+  %231 = getelementptr inbounds nuw i8, ptr %memory, i64 1087875
+  store i16 21569, ptr %231, align 2
+  %232 = getelementptr inbounds nuw i8, ptr %memory, i64 1089776
+  store i16 21313, ptr %232, align 2
+  %233 = getelementptr inbounds nuw i8, ptr %memory, i64 1091727
+  store i16 21057, ptr %233, align 2
+  %234 = getelementptr inbounds nuw i8, ptr %memory, i64 1093696
+  store i16 20801, ptr %234, align 2
+  %235 = getelementptr inbounds nuw i8, ptr %memory, i64 1095634
+  store i16 20545, ptr %235, align 2
+  %236 = getelementptr inbounds nuw i8, ptr %memory, i64 1097146
+  store i8 87, ptr %236, align 1
+  %237 = getelementptr inbounds nuw i8, ptr %memory, i64 1098647
+  store i8 86, ptr %237, align 1
+  %238 = getelementptr inbounds nuw i8, ptr %memory, i64 1100208
+  store i8 85, ptr %238, align 1
+  %239 = getelementptr inbounds nuw i8, ptr %memory, i64 1101727
+  store i8 83, ptr %239, align 1
+  %240 = getelementptr inbounds nuw i8, ptr %memory, i64 1103178
+  store i8 82, ptr %240, align 1
+  %241 = getelementptr inbounds nuw i8, ptr %memory, i64 1104741
+  store i8 81, ptr %241, align 1
+  %242 = getelementptr inbounds nuw i8, ptr %memory, i64 1106210
+  store i8 80, ptr %242, align 1
+  %243 = getelementptr inbounds nuw i8, ptr %memory, i64 1107707
+  store i8 -100, ptr %243, align 1
+  %244 = getelementptr inbounds nuw i8, ptr %memory, i64 1116009
+  store i32 147227464, ptr %244, align 4
+  %245 = getelementptr inbounds nuw i8, ptr %memory, i64 1124969
+  tail call void @llvm.memset.p0.i64(ptr noundef nonnull align 4 dereferenceable(16) %221, i8 -112, i64 16, i1 false)
+  store i32 146149192, ptr %245, align 4
+  %246 = getelementptr inbounds nuw i8, ptr %memory, i64 1130660
+  store i32 -920322239, ptr %246, align 4
   store i32 146149192, ptr %91, align 4
   store i32 29393736, ptr %92, align 4
   store i32 280366924, ptr %93, align 4
@@ -578,8 +573,8 @@ PUSHFQ_169629:                                    ; preds = %entry
   store i32 29393736, ptr %76, align 4
   store i32 -920322239, ptr %85, align 4
   store i32 149848904, ptr %86, align 4
-  %252 = getelementptr inbounds nuw i8, ptr %memory, i64 1138688
-  store i64 -16, ptr %252, align 8
+  %247 = getelementptr inbounds nuw i8, ptr %memory, i64 1138688
+  store i64 -16, ptr %247, align 8
   store i32 146834248, ptr %88, align 4
   store i32 146149192, ptr %89, align 4
   store i32 -920322239, ptr %90, align 4
@@ -599,26 +594,26 @@ PUSHFQ_169629:                                    ; preds = %entry
   store i32 147227464, ptr %154, align 4
   store i32 146149192, ptr %155, align 4
   store i32 -920322239, ptr %156, align 4
-  %253 = getelementptr inbounds nuw i8, ptr %memory, i64 681074
-  store i32 29393736, ptr %253, align 4
-  %254 = getelementptr inbounds nuw i8, ptr %memory, i64 682820
-  store i32 146214728, ptr %254, align 4
-  %255 = getelementptr inbounds nuw i8, ptr %memory, i64 691730
-  store i32 146149192, ptr %255, align 4
-  %256 = getelementptr inbounds nuw i8, ptr %memory, i64 697453
-  store i32 -920322239, ptr %256, align 4
+  %248 = getelementptr inbounds nuw i8, ptr %memory, i64 681074
+  store i32 29393736, ptr %248, align 4
+  %249 = getelementptr inbounds nuw i8, ptr %memory, i64 682820
+  store i32 146214728, ptr %249, align 4
+  %250 = getelementptr inbounds nuw i8, ptr %memory, i64 691730
+  store i32 146149192, ptr %250, align 4
+  %251 = getelementptr inbounds nuw i8, ptr %memory, i64 697453
+  store i32 -920322239, ptr %251, align 4
   br label %common.ret
 
 common.ret:                                       ; preds = %PUSHFQ_169629, %PUSHFQ_94237
-  %257 = phi i64 [ 2601, %PUSHFQ_169629 ], [ %218, %PUSHFQ_94237 ]
-  %258 = getelementptr inbounds nuw i8, ptr %memory, i64 153510
-  store i32 29393736, ptr %258, align 4
-  %259 = getelementptr inbounds nuw i8, ptr %memory, i64 155328
-  store i32 277562470, ptr %259, align 4
+  %252 = phi i64 [ 2601, %PUSHFQ_169629 ], [ %213, %PUSHFQ_94237 ]
+  %253 = getelementptr inbounds nuw i8, ptr %memory, i64 153510
+  store i32 29393736, ptr %253, align 4
+  %254 = getelementptr inbounds nuw i8, ptr %memory, i64 155328
+  store i32 277562470, ptr %254, align 4
   store i16 8615, ptr %1, align 2
-  %260 = getelementptr inbounds nuw i8, ptr %memory, i64 162988
-  store i8 -99, ptr %260, align 1
+  %255 = getelementptr inbounds nuw i8, ptr %memory, i64 162988
+  store i8 -99, ptr %255, align 1
   %RAX266648 = getelementptr inbounds nuw i8, ptr %state, i64 2216
-  store i64 %257, ptr %RAX266648, align 8
+  store i64 %252, ptr %RAX266648, align 8
   ret ptr %state
 }

@@ -1,13 +1,10 @@
 #include "vexa/arch/arch.hpp"
-#include "bitwuzla/cpp/sat_solver.h"
 #include "vexa/arch/amd64.hpp"
 #include <vexa/vexa.h>
 
 #include <llvm/ADT/SmallVector.h>
 
 #include <remill/BC/Util.h>
-
-#include <bitwuzla/cpp/bitwuzla.h>
 
 #define EVENT_HANDLER(event_k) context->event_handler(event_k);
 
@@ -305,8 +302,8 @@ vexa::cpu::internal_lifter_status vexa::cpu::process_instruction()
         if (!cell || !cell->original_val)
             break;
 
-        bw::Term expr = cell->original_val->as_expr();
-        if (!expr.is_value())
+        bwr::Expr expr = cell->original_val->as_expr();
+        if (expr.kind() != bwr::Kind::Const)
             break;
 
         uint64_t full_val = cell->original_val->as_uint64();
@@ -358,7 +355,7 @@ vexa::cpu::internal_lifter_status vexa::cpu::lift_instruction(remill::Instructio
         return internal_lifter_status::explore_other_paths;
     }
 
-    // emulate the lifted block in Bitwuzla
+    // emulate the lifted block in Bitwright
     //
     emulate->run_block(block);
 
@@ -545,10 +542,12 @@ void vexa::cpu::handle_conditional_moves(remill::Instruction inst, llvm::BasicBl
 
 void vexa::cpu::solve_cpu_context()
 {
-    context->bitwuzla->push(1);
+    bwr::Assumptions assumptions;
     for (const auto &constraint : path_constraints) {
-        context->bitwuzla->assert_formula(constraint);
+        assumptions.assume(constraint, true);
     }
+    if (assumptions.infeasible())
+        return;
 
     std::vector<vexa::reg_t> regs = {
         vexa::amd64::RAX, vexa::amd64::RBX, vexa::amd64::RCX, vexa::amd64::RDX, vexa::amd64::RSI,
@@ -558,16 +557,11 @@ void vexa::cpu::solve_cpu_context()
         vexa::amd64::OF,  vexa::amd64::AF};
 
     for (const auto &reg_id : regs) {
-        auto reg = get_register(reg_id);
-        //LOG_DEBUG(logger, "Resolving {}", reg->name);
-
-        vexa::value *value = read_register(reg_id)->simplify({});
-        if (value->simplify()->is_concrete()) {
+        vexa::value *value = read_register(reg_id)->simplify(path_constraints);
+        if (value->is_concrete()) {
             write_register(reg_id, value);
         }
     }
-
-    context->bitwuzla->pop(1);
 }
 
 void vexa::cpu::branching(vexa::dual_value condition, uint64_t jump_pc, uint64_t fallthrough_pc)
@@ -702,12 +696,12 @@ vexa::dual_value vexa::cpu::value_to_pointer(llvm::Value *addr)
     else {
         auto values = v->possible_values(path_constraints);
 
-        if (!values.empty()) {
+        if (values.size() == 1) {
             vexa::dual_pointer page = get_page(symex->value(values.back()));
             ptr = builder->inbounds_gep(
                 builder->getInt8Ty(),
                 page.l,
-                llvm::ConstantInt::get(addr->getType(), v->as_uint64()));
+                llvm::ConstantInt::get(addr->getType(), vexa::value::as_uint64(values.back())));
         }
         else {
             ptr = builder->inttoptr(addr, builder->getPtrTy(), global_memory);
@@ -735,31 +729,22 @@ bool vexa::cpu::opaque_solver(vexa::value *condition, bool &result)
         }
     }
 
-    // use solver for opaque predicates
-    // only if you prefer accuracy over performance
-    //
-    if (false) {
-        bw::Term cond = condition->as_expr_bool();
-        bw::Term not_cond = context->term_manager.mk_term(bw::Kind::NOT, {cond});
-
-        // check if cond can be false
-        if (context->bitwuzla->check_sat({not_cond}) == bw::Result::UNSAT) {
-            // means it cant be false
-            // we solved this branch is always taken
-            result = true;
-            return true;
-        }
-
-        // check if cond can be true
-        if (context->bitwuzla->check_sat({cond}) == bw::Result::UNSAT) {
-            // means it cant be true
-            // we solved this branch is never taken
-            result = false;
-            return true;
-        }
+    bwr::Assumptions assumptions;
+    for (const auto &constraint : path_constraints) {
+        assumptions.assume(constraint, true);
     }
 
-    // condition is not an opaque predicate
+    bwr::Expr cond = condition->as_expr_bool();
+    bwr::Proof p = bwr::prove(cond, &assumptions);
+    if (p.truth == bwr::Truth::True) {
+        result = true;
+        return true;
+    }
+    if (p.truth == bwr::Truth::False) {
+        result = false;
+        return true;
+    }
+
     return false;
 }
 
@@ -773,37 +758,40 @@ vexa::value *vexa::cpu::stack_access(uint64_t offset)
 
 bool vexa::cpu::is_ite(vexa::value *v)
 {
-    return v->as_expr().kind() == bw::Kind::ITE;
+    return v->as_expr().kind() == bwr::Kind::Select;
 }
 
-bw::Term normalize_ite(bw::Term e, bw::TermManager &term_manager, bw::Bitwuzla &solver)
+bwr::Expr normalize_ite(bwr::Expr e, bwr::Context &ctx, bwr::Engine &solver)
 {
-    auto normalize = [&](const bw::Term &parent_expr, const bw::Term &expr) -> bw::Term {
-        if (expr.kind() != bw::Kind::ITE)
+    auto normalize = [&](auto &self, const bwr::Expr &parent_expr, const bwr::Expr &expr) -> bwr::Expr {
+        if (expr.kind() != bwr::Kind::Select)
             return parent_expr;
 
-        bw::Term cond = expr[0];
-        bw::Term new_true = term_manager.substitute_term(parent_expr, {{expr, expr[1]}});
-        bw::Term new_false = term_manager.substitute_term(parent_expr, {{expr, expr[2]}});
-        return term_manager.mk_term(bw::Kind::ITE, {cond, new_true, new_false});
+        auto kids = expr.children();
+        bwr::Expr cond = kids[0];
+        bwr::Expr new_true = ctx.substitute(parent_expr, {{expr, kids[1]}});
+        bwr::Expr new_false = ctx.substitute(parent_expr, {{expr, kids[2]}});
+        return cond.select(new_true, new_false);
     };
 
-    for (size_t i = 0; i < e.num_children(); i++)
-        e = normalize(e, e[i]);
+    auto children = e.children();
+    for (size_t i = 0; i < children.size(); i++)
+        e = normalize(normalize, e, children[i]);
 
     return solver.simplify(e);
 }
 
 vexa::cpu::resolved_path_t vexa::cpu::resolve_ite(vexa::value *v)
 {
-    bw::Term v_expr =
-        normalize_ite(v->simplify()->as_expr(), context->term_manager, *context->bitwuzla);
+    bwr::Expr v_expr =
+        normalize_ite(v->simplify()->as_expr(), context->bitwright_ctx, *context->bitwright_engine);
 
-    if (v_expr.kind() == bw::Kind::ITE) {
-        bw::Term then_expr = v_expr[1];
-        bw::Term else_expr = v_expr[2];
+    if (v_expr.kind() == bwr::Kind::Select) {
+        auto kids = v_expr.children();
+        bwr::Expr then_expr = kids[1];
+        bwr::Expr else_expr = kids[2];
 
-        if (then_expr.is_value() && else_expr.is_value())
+        if (then_expr.kind() == bwr::Kind::Const && else_expr.kind() == bwr::Kind::Const)
             return vexa::cpu::resolved_path_t(
                 vexa::value::as_uint64(then_expr), vexa::value::as_uint64(else_expr));
     }

@@ -124,61 +124,54 @@ entry:
   store i64 54807, ptr %61, align 8
   %62 = getelementptr inbounds nuw i8, ptr %memory, i64 57181
   %63 = getelementptr inbounds nuw i8, ptr %memory, i64 59400
-  %64 = shl i64 %57, 17
-  %65 = lshr i64 %57, 47
-  %66 = and i64 %65, 255
-  %67 = getelementptr inbounds nuw i8, ptr %memory, i64 55768
-  store i64 55800, ptr %67, align 8
-  %68 = getelementptr inbounds nuw i8, ptr %memory, i64 55776
-  store i64 55814, ptr %68, align 8
-  %69 = getelementptr inbounds nuw i8, ptr %memory, i64 55784
-  store i64 55832, ptr %69, align 8
-  %70 = getelementptr inbounds nuw i8, ptr %memory, i64 55792
-  store i64 55846, ptr %70, align 8
-  %71 = or disjoint i64 %65, %64
-  %72 = and i64 %71, 4294967040
-  %73 = and i64 %64, -4294967296
-  %74 = or disjoint i64 %73, %66
-  %75 = or disjoint i64 %74, %72
-  store i64 %75, ptr %43, align 8
-  %76 = getelementptr inbounds nuw i8, ptr %memory, i64 61432
-  %77 = mul i64 %75, -7046029288634856825
-  store i64 %77, ptr %44, align 8
-  %78 = getelementptr inbounds nuw i8, ptr %memory, i64 61424
-  %79 = lshr i64 %77, 29
-  %80 = getelementptr inbounds nuw i8, ptr %memory, i64 61416
-  %81 = xor i64 %79, %77
-  store i64 %81, ptr %76, align 8
-  %82 = getelementptr inbounds nuw i8, ptr %memory, i64 61408
-  %83 = add i64 %81, -3335678366873096957
-  store i64 %83, ptr %78, align 8
-  %84 = tail call i64 @llvm.fshl.i64(i64 %83, i64 %83, i64 41)
-  store i64 %84, ptr %80, align 8
-  %85 = getelementptr inbounds nuw i8, ptr %memory, i64 61400
-  %86 = getelementptr inbounds nuw i8, ptr %memory, i64 61392
-  %87 = xor i64 %84, 7222893703706247677
-  store i64 %87, ptr %82, align 8
-  %88 = getelementptr inbounds nuw i8, ptr %memory, i64 61384
-  %89 = getelementptr inbounds nuw i8, ptr %memory, i64 55141
-  store i64 55173, ptr %89, align 8
-  %90 = getelementptr inbounds nuw i8, ptr %memory, i64 55149
-  store i64 55187, ptr %90, align 8
-  %91 = getelementptr inbounds nuw i8, ptr %memory, i64 55157
-  store i64 55205, ptr %91, align 8
-  %92 = getelementptr inbounds nuw i8, ptr %memory, i64 55165
-  store i64 55219, ptr %92, align 8
-  %93 = and i64 %87, 4294967295
-  %94 = sub nsw i64 0, %93
-  %95 = or i64 %87, %94
-  store i64 %95, ptr %85, align 8
+  %64 = getelementptr inbounds nuw i8, ptr %memory, i64 55768
+  store i64 55800, ptr %64, align 8
+  %65 = getelementptr inbounds nuw i8, ptr %memory, i64 55776
+  store i64 55814, ptr %65, align 8
+  %66 = getelementptr inbounds nuw i8, ptr %memory, i64 55784
+  store i64 55832, ptr %66, align 8
+  %67 = getelementptr inbounds nuw i8, ptr %memory, i64 55792
+  store i64 55846, ptr %67, align 8
+  %68 = tail call i64 @llvm.fshl.i64(i64 %57, i64 %57, i64 17)
+  store i64 %68, ptr %43, align 8
+  %69 = getelementptr inbounds nuw i8, ptr %memory, i64 61432
+  %70 = mul i64 %68, -7046029288634856825
+  store i64 %70, ptr %44, align 8
+  %71 = getelementptr inbounds nuw i8, ptr %memory, i64 61424
+  %72 = lshr i64 %70, 29
+  %73 = getelementptr inbounds nuw i8, ptr %memory, i64 61416
+  %74 = xor i64 %72, %70
+  store i64 %74, ptr %69, align 8
+  %75 = getelementptr inbounds nuw i8, ptr %memory, i64 61408
+  %76 = add i64 %74, -3335678366873096957
+  store i64 %76, ptr %71, align 8
+  %77 = tail call i64 @llvm.fshl.i64(i64 %76, i64 %76, i64 41)
+  store i64 %77, ptr %73, align 8
+  %78 = getelementptr inbounds nuw i8, ptr %memory, i64 61400
+  %79 = getelementptr inbounds nuw i8, ptr %memory, i64 61392
+  %80 = xor i64 %77, 7222893703706247677
+  store i64 %80, ptr %75, align 8
+  %81 = getelementptr inbounds nuw i8, ptr %memory, i64 61384
+  %82 = getelementptr inbounds nuw i8, ptr %memory, i64 55141
+  store i64 55173, ptr %82, align 8
+  %83 = getelementptr inbounds nuw i8, ptr %memory, i64 55149
+  store i64 55187, ptr %83, align 8
+  %84 = getelementptr inbounds nuw i8, ptr %memory, i64 55157
+  store i64 55205, ptr %84, align 8
+  %85 = getelementptr inbounds nuw i8, ptr %memory, i64 55165
+  store i64 55219, ptr %85, align 8
+  %86 = and i64 %80, 4294967295
+  %87 = sub nsw i64 0, %86
+  %88 = or i64 %80, %87
+  store i64 %88, ptr %78, align 8
   store i64 1976, ptr %63, align 8
   tail call void @llvm.memset.p0.i64(ptr noundef nonnull align 4 dereferenceable(16) %62, i8 -112, i64 16, i1 false)
-  %96 = icmp sgt i64 %95, -1
-  %97 = zext i1 %96 to i64
-  store i64 %97, ptr %86, align 8
-  %98 = getelementptr inbounds nuw i8, ptr %memory, i64 61376
-  store i64 -16, ptr %98, align 8
-  store i64 -32, ptr %88, align 8
-  store i64 %97, ptr %RAX3511, align 8
+  %89 = icmp sgt i64 %88, -1
+  %90 = zext i1 %89 to i64
+  store i64 %90, ptr %79, align 8
+  %91 = getelementptr inbounds nuw i8, ptr %memory, i64 61376
+  store i64 -16, ptr %91, align 8
+  store i64 -32, ptr %81, align 8
+  store i64 %90, ptr %RAX3511, align 8
   ret ptr %state
 }

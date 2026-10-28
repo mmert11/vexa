@@ -1,4 +1,4 @@
-#include <bitwuzla/cpp/bitwuzla.h>
+#include <bitwright.hpp>
 #include <vexa/vexa.h>
 
 namespace vexa

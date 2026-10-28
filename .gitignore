@@ -5,6 +5,6 @@ build/
 .omp/
 .clangd
 compile_commands.json
-build.sh
+external/deps/
+external/remill/install/
 .git
-CMakeLists.txt

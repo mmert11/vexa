@@ -1,7 +1,7 @@
 #include <vexa/vexa.h>
 
+#include <llvm/IR/IntrinsicsX86.h>
 #include <llvm/Transforms/Utils/Cloning.h>
-
 #include <remill/Arch/Runtime/HyperCall.h>
 
 void vexa::cpu::emulator::run_block(llvm::BasicBlock *BB)
@@ -25,8 +25,8 @@ void vexa::cpu::emulator::write_memory(vexa::pointer *addr, vexa::value *val)
     addr->simplify();
 
     if (addr->is_symbolic()) {
-        bw::Result result;
-        std::vector<bw::Term> addresses = addr->possible_values(cpu->path_constraints, &result);
+        vexa::result result;
+        std::vector<bwr::Expr> addresses = addr->possible_values(cpu->path_constraints, &result);
 
         if (addresses.size() == 1) {
             vexa::pointer *ptr = cpu->calculate_pointer(symex->value(addresses.front()));
@@ -34,7 +34,7 @@ void vexa::cpu::emulator::write_memory(vexa::pointer *addr, vexa::value *val)
             return;
         }
 
-        if (addresses.size() > 1 && result == bw::Result::UNSAT) {
+        if (addresses.size() > 1 && result == vexa::result::unsat) {
             int size = val->size();
 
             for (size_t i = 0; i < addresses.size(); ++i) {
@@ -59,15 +59,15 @@ vexa::value *vexa::cpu::emulator::read_memory(vexa::pointer *addr, int size)
     addr->simplify();
 
     if (addr->is_symbolic()) {
-        bw::Result result;
-        std::vector<bw::Term> addresses = addr->possible_values(cpu->path_constraints, &result);
+        vexa::result result;
+        std::vector<bwr::Expr> addresses = addr->possible_values(cpu->path_constraints, &result);
 
         if (addresses.size() == 1) {
             vexa::pointer *ptr = cpu->calculate_pointer(symex->value(addresses.front()));
             return memory->read(ptr, size);
         }
 
-        if (addresses.size() > 1 && result == bw::Result::UNSAT) {
+        if (addresses.size() > 1 && result == vexa::result::unsat) {
             vexa::value *first_addr = symex->value(addresses.front());
             vexa::pointer *first_ptr = cpu->calculate_pointer(first_addr);
             vexa::value *final_sym = memory->read(first_ptr, size);
@@ -93,7 +93,7 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
     vexa::value *address,
     size_t size,
     bool write,
-    const std::vector<bw::Term> &values)
+    const std::vector<bwr::Expr> &values)
 {
     VEXA_ASSERT(values.size() > 1);
     llvm::BasicBlock *source = call.getParent();
@@ -159,7 +159,7 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
 
         // initialize for the execution
         //
-        const bw::Term &candidate = values[index];
+        const bwr::Expr &candidate = values[index];
         uint64_t concrete_address = vexa::value::as_uint64(candidate);
         llvm::BasicBlock *case_block = builder->basic_block(
             std::format("{}_{:x}", write ? "write" : "read", concrete_address));
@@ -167,7 +167,7 @@ llvm::BasicBlock *vexa::cpu::emulator::fork_memory_access(
 
         // add to path constraints
         cpu->path_constraints.push_back(
-            context->term_manager.mk_term(bw::Kind::EQUAL, {address->as_expr(), candidate}));
+            address->as_expr().eq(candidate));
         cpu->solve_cpu_context();
 
         vexa::value *solved = symex->value(candidate);
@@ -221,19 +221,19 @@ llvm::BasicBlock *vexa::cpu::emulator::write_memory_intrinsic(llvm::CallInst &ca
     address_sym.v = address_sym.v->simplify(cpu->path_constraints);
 
     if (address_sym.v->is_symbolic() && !cpu->instruction.IsControlFlow()) {
-        bw::Result result;
-        std::vector<bw::Term> values =
+        vexa::result result;
+        std::vector<bwr::Expr> values =
             address_sym.v->possible_values(cpu->path_constraints, &result);
-        if (values.size() > 1 && result == bw::Result::UNSAT)
+        if (values.size() > 1 && result == vexa::result::unsat)
             return fork_memory_access(call, address_sym.v, size, true, values);
     }
 
     if (address_sym.v->is_symbolic()) {
-        bw::Result result;
-        std::vector<bw::Term> values =
+        vexa::result result;
+        std::vector<bwr::Expr> values =
             address_sym.v->possible_values(cpu->path_constraints, &result);
 
-        if (values.size() > 1 && result == bw::Result::UNSAT) {
+        if (values.size() > 1 && result == vexa::result::unsat) {
             builder->SetInsertPoint(call.getNextNode());
             auto *address_type = llvm::dyn_cast<llvm::IntegerType>(address->getType());
             VEXA_ASSERT(address_type);
@@ -297,21 +297,20 @@ llvm::BasicBlock *vexa::cpu::emulator::read_memory_intrinsic(llvm::CallInst &cal
     // get pointer operand expression
     llvm::Value *addr = call.getOperand(1);
     vexa::dual_value addr_sym = VEXA_VAL(addr);
-    addr_sym.v = addr_sym.v->simplify();
+    addr_sym.v->simplify();
 
     
     if (addr_sym.v->is_symbolic() && !cpu->instruction.IsControlFlow()) {
-        bw::Result result;
-        std::vector<bw::Term> values = addr_sym.v->possible_values(cpu->path_constraints, &result);
-        if (values.size() > 1 && result == bw::Result::UNSAT)
+        vexa::result result;
+        std::vector<bwr::Expr> values = addr_sym.v->possible_values(cpu->path_constraints, &result);
+        if (values.size() > 1 && result == vexa::result::unsat)
             return fork_memory_access(call, addr_sym.v, size, false, values);
     }
 
-
     if (addr_sym.v->is_symbolic()) {
-        bw::Result result;
-        std::vector<bw::Term> values = addr_sym.v->possible_values(cpu->path_constraints, &result);
-        if (values.size() > 1 && result == bw::Result::UNSAT) {
+        vexa::result result;
+        std::vector<bwr::Expr> values = addr_sym.v->possible_values(cpu->path_constraints, &result);
+        if (values.size() > 1 && result == vexa::result::unsat) {
             builder->SetInsertPoint(call.getNextNode());
             auto *address_type = llvm::dyn_cast<llvm::IntegerType>(addr->getType());
             VEXA_ASSERT(address_type);
@@ -361,7 +360,8 @@ llvm::BasicBlock *vexa::cpu::emulator::read_memory_intrinsic(llvm::CallInst &cal
             return nullptr;
         }
         if (values.size() == 1) {
-            symex->set(addr, symex->value(values.front()));
+            bwr::Expr& concretized = values.front();
+            symex->set(addr, symex->value(concretized));
         }
     }
 
@@ -515,8 +515,7 @@ vexa::value *vexa::cpu::emulator::visitExtractElementInst(llvm::ExtractElementIn
     std::string poison_name =
         "extractelement_poison_" + std::to_string(reinterpret_cast<uintptr_t>(&I));
 
-    bw::Term result = context->term_manager.mk_const(
-        context->term_manager.mk_bv_sort(element_bit_width), poison_name);
+    bwr::Expr result = context->bitwright_ctx.symbol(poison_name, element_bit_width);
 
     uint64_t representable_elements =
         index->size() < 64 ? (uint64_t{1} << index->size()) : element_count;
@@ -526,10 +525,9 @@ vexa::value *vexa::cpu::emulator::visitExtractElementInst(llvm::ExtractElementIn
          ++element_index)
     {
         uint64_t low_bit = element_index * element_bit_width;
-        bw::Term element = vector->extract(low_bit + element_bit_width - 1, low_bit)->as_expr();
+        bwr::Expr element = vector->extract(low_bit + element_bit_width - 1, low_bit)->as_expr();
         vexa::value *expected_index = symex->concrete(element_index, index->size());
-        result = context->term_manager.mk_term(
-            bw::Kind::ITE, {(*index == *expected_index)->as_expr(), element, result});
+        result = (*index == *expected_index)->as_expr().select(element, result);
     }
 
     return symex->value(result);
@@ -541,6 +539,9 @@ vexa::value *vexa::cpu::emulator::visitSelectInst(llvm::SelectInst &I)
     vexa::value *lhs = VEXA_VAL(I.getTrueValue()).v;
     vexa::value *rhs = VEXA_VAL(I.getFalseValue()).v;
 
+    if (cond->is_concrete()) {
+        return cond->as_uint64() ? lhs : rhs;
+    }
     return cond->ite(*lhs, *rhs);
 }
 
@@ -679,12 +680,7 @@ vexa::value *vexa::cpu::emulator::visitICmpInst(llvm::ICmpInst &I)
             "Unsupported icmp predicate -> {}", std::string(I.getPredicateName(I.getPredicate())));
     }
 
-    bw::Sort bool_sort = context->term_manager.mk_bv_sort(1);
-    return symex->value(context->term_manager.mk_term(
-        bw::Kind::ITE,
-        {expr->as_expr(),
-         context->term_manager.mk_bv_one(bool_sort),
-         context->term_manager.mk_bv_zero(bool_sort)}));
+    return expr;
 }
 
 vexa::value *vexa::cpu::emulator::visitZExtInst(llvm::ZExtInst &I)
@@ -716,28 +712,17 @@ vexa::value *vexa::cpu::emulator::handle_llvm_intrinsics(
     llvm::Function *callee,
     llvm::Intrinsic::ID id)
 {
-    bw::TermManager &tm = context->term_manager;
     switch (id) {
     case llvm::Intrinsic::ctpop: {
         vexa::value *src = symex->get(I.getOperand(0));
-        uint8_t src_bit_width = src->size();
         uint8_t dst_bit_width = I.getType()->getPrimitiveSizeInBits();
         VEXA_ASSERT(dst_bit_width);
-
-        // extract the first bit and zero extend to target size
-        bw::Term total = tm.mk_term(
-            bw::Kind::BV_ZERO_EXTEND,
-            {src->extract(0, 0)->as_expr()},
-            {static_cast<uint64_t>(dst_bit_width - 1)});
-        // then extract other bits and add to the total
-        for (size_t i = 1; i < src_bit_width; i++) {
-            bw::Term bit = tm.mk_term(
-                bw::Kind::BV_ZERO_EXTEND,
-                {src->extract(i, i)->as_expr()},
-                {static_cast<uint64_t>(dst_bit_width - 1)});
-            total = tm.mk_term(bw::Kind::BV_ADD, {total, bit});
-        }
-        return symex->value(std::move(total));
+        bwr::Expr res = src->as_expr().popcnt();
+        if (res.width() < dst_bit_width)
+            res = res.zext(dst_bit_width);
+        else if (res.width() > dst_bit_width)
+            res = res.trunc(dst_bit_width);
+        return symex->value(res);
     }
     case llvm::Intrinsic::fshl: {
         vexa::value *src_x = symex->get(I.getOperand(0));
@@ -745,24 +730,17 @@ vexa::value *vexa::cpu::emulator::handle_llvm_intrinsics(
         vexa::value *shift = symex->get(I.getOperand(2));
 
         uint8_t bit_width = src_x->size();
-        bw::Term x = src_x->as_expr();
-        bw::Term y = src_y->as_expr();
-        bw::Term s = shift->as_expr();
-
-        bw::Term s_mod =
-            tm.mk_term(bw::Kind::BV_UREM, {s, tm.mk_bv_value_uint64(s.sort(), bit_width)});
-        bw::Term s_wide = tm.mk_term(bw::Kind::BV_ZERO_EXTEND, {s_mod}, {bit_width});
-        bw::Term wide = tm.mk_term(bw::Kind::BV_CONCAT, {x, y});
-        bw::Term shifted = tm.mk_term(bw::Kind::BV_SHL, {wide, s_wide});
-
-        // extract the bits from left
-        bw::Term result = tm.mk_term(
-            bw::Kind::BV_EXTRACT, {shifted}, {static_cast<uint64_t>(2 * bit_width - 1), bit_width});
-        // check if the result value's size matches with the expected in llvm
-        uint8_t dst_bit_width = I.getType()->getPrimitiveSizeInBits();
-        VEXA_ASSERT(dst_bit_width == result.sort().bv_size());
-
-        return symex->value(std::move(result));
+        bwr::Expr x = src_x->as_expr();
+        bwr::Expr y = src_y->as_expr();
+        bwr::Expr s = shift->as_expr();
+        if (x == y) {
+            return symex->value(x.rotl(s));
+        }
+        bwr::Expr s_mod = s.urem(context->bitwright_ctx.constant(s.width(), bit_width));
+        bwr::Expr wide = x.concat(y);
+        bwr::Expr shifted = wide << s_mod.zext(bit_width * 2);
+        bwr::Expr result = shifted.extract(bit_width, bit_width);
+        return symex->value(result);
     }
     case llvm::Intrinsic::fshr: {
         vexa::value *src_x = symex->get(I.getOperand(0));
@@ -770,132 +748,185 @@ vexa::value *vexa::cpu::emulator::handle_llvm_intrinsics(
         vexa::value *shift = symex->get(I.getOperand(2));
 
         uint8_t bit_width = src_x->size();
-        bw::Term x = src_x->as_expr();
-        bw::Term y = src_y->as_expr();
-        bw::Term s = shift->as_expr();
-
-        bw::Term s_mod =
-            tm.mk_term(bw::Kind::BV_UREM, {s, tm.mk_bv_value_uint64(s.sort(), bit_width)});
-        bw::Term s_wide = tm.mk_term(bw::Kind::BV_ZERO_EXTEND, {s_mod}, {bit_width});
-        bw::Term wide = tm.mk_term(bw::Kind::BV_CONCAT, {x, y});
-        bw::Term shifted = tm.mk_term(bw::Kind::BV_SHR, {wide, s_wide});
-
-        // extract the bits from right
-        bw::Term result =
-            tm.mk_term(bw::Kind::BV_EXTRACT, {shifted}, {static_cast<uint64_t>(bit_width - 1), 0});
-        // check if the result value's size matches with the expected in llvm
-        uint8_t dst_bit_width = I.getType()->getPrimitiveSizeInBits();
-        VEXA_ASSERT(dst_bit_width == result.sort().bv_size());
-
-        return symex->value(std::move(result));
+        bwr::Expr x = src_x->as_expr();
+        bwr::Expr y = src_y->as_expr();
+        bwr::Expr s = shift->as_expr();
+        if (x == y) {
+            return symex->value(x.rotr(s));
+        }
+        bwr::Expr s_mod = s.urem(context->bitwright_ctx.constant(s.width(), bit_width));
+        bwr::Expr wide = x.concat(y);
+        bwr::Expr shifted = wide >> s_mod.zext(bit_width * 2);
+        bwr::Expr result = shifted.extract(0, bit_width);
+        return symex->value(result);
     }
     case llvm::Intrinsic::bswap: {
         vexa::value *src = symex->get(I.getOperand(0));
-        uint32_t bit_width = src->size();
-        VEXA_ASSERT(bit_width % 8 == 0 && "bswap bit width must be a multiple of 8");
-
-        bw::Term result = src->extract(7, 0)->as_expr();
-        for (size_t i = 8; i < bit_width; i += 8) {
-            bw::Term next_byte = src->extract(i + 7, i)->as_expr();
-            result = tm.mk_term(bw::Kind::BV_CONCAT, {result, next_byte});
-        }
-
-        uint8_t dst_bit_width = I.getType()->getPrimitiveSizeInBits();
-        VEXA_ASSERT(dst_bit_width == result.sort().bv_size());
-        return symex->value(std::move(result));
+        return symex->value(src->as_expr().bswap());
+    }
+    case llvm::Intrinsic::bitreverse: {
+        vexa::value *src = symex->get(I.getOperand(0));
+        return symex->value(src->as_expr().bitrev());
     }
     case llvm::Intrinsic::cttz: {
         vexa::value *src = symex->get(I.getOperand(0));
-        uint32_t bit_width = src->size();
         uint8_t dst_bit_width = I.getType()->getPrimitiveSizeInBits();
         VEXA_ASSERT(dst_bit_width);
-        bw::Sort dst_sort = tm.mk_bv_sort(dst_bit_width);
-        bw::Term result = tm.mk_bv_value_uint64(dst_sort, bit_width);
-        bw::Term bit_one = tm.mk_bv_one(tm.mk_bv_sort(1));
-
-        for (int i = bit_width - 1; i >= 0; i--) {
-            bw::Term current_bit = src->extract(i, i)->as_expr();
-            bw::Term current_idx = tm.mk_bv_value_uint64(dst_sort, i);
-            bw::Term is_one = tm.mk_term(bw::Kind::EQUAL, {current_bit, bit_one});
-            result = tm.mk_term(bw::Kind::ITE, {is_one, current_idx, result});
-        }
-
-        VEXA_ASSERT(dst_bit_width == result.sort().bv_size());
-        return symex->value(std::move(result));
+        bwr::Expr res = src->as_expr().ctz();
+        if (res.width() < dst_bit_width)
+            res = res.zext(dst_bit_width);
+        else if (res.width() > dst_bit_width)
+            res = res.trunc(dst_bit_width);
+        return symex->value(res);
     }
     case llvm::Intrinsic::ctlz: {
         vexa::value *src = symex->get(I.getOperand(0));
-        uint32_t bit_width = src->size();
         uint8_t dst_bit_width = I.getType()->getPrimitiveSizeInBits();
         VEXA_ASSERT(dst_bit_width);
-        bw::Sort dst_sort = tm.mk_bv_sort(dst_bit_width);
-        bw::Term result = tm.mk_bv_value_uint64(dst_sort, bit_width);
-        bw::Term bit_one = tm.mk_bv_one(tm.mk_bv_sort(1));
-
-        for (uint32_t i = 0; i < bit_width; i++) {
-            bw::Term current_bit = src->extract(i, i)->as_expr();
-            uint32_t leading_zeros = bit_width - 1 - i;
-            bw::Term current_idx = tm.mk_bv_value_uint64(dst_sort, leading_zeros);
-            bw::Term is_one = tm.mk_term(bw::Kind::EQUAL, {current_bit, bit_one});
-            result = tm.mk_term(bw::Kind::ITE, {is_one, current_idx, result});
-        }
-
-        VEXA_ASSERT(dst_bit_width == result.sort().bv_size());
-        return symex->value(std::move(result));
+        bwr::Expr res = src->as_expr().clz();
+        if (res.width() < dst_bit_width)
+            res = res.zext(dst_bit_width);
+        else if (res.width() > dst_bit_width)
+            res = res.trunc(dst_bit_width);
+        return symex->value(res);
     }
     case llvm::Intrinsic::umax: {
         vexa::value *src0 = symex->get(I.getOperand(0));
         vexa::value *src1 = symex->get(I.getOperand(1));
-
-        uint8_t bit_width = src0->size();
-        VEXA_ASSERT(src1->size() == bit_width);
-
-        bw::Term result = tm.mk_term(
-            bw::Kind::ITE, {src0->uge(*src1)->as_expr(), src0->as_expr(), src1->as_expr()});
-
-        uint8_t dst_bit_width = I.getType()->getPrimitiveSizeInBits();
-        VEXA_ASSERT(dst_bit_width == bit_width);
-        VEXA_ASSERT(dst_bit_width == result.sort().bv_size());
-        return symex->value(std::move(result));
+        bwr::Expr res = src0->uge(*src1)->as_expr().select(src0->as_expr(), src1->as_expr());
+        return symex->value(res);
+    }
+    case llvm::Intrinsic::umin: {
+        vexa::value *src0 = symex->get(I.getOperand(0));
+        vexa::value *src1 = symex->get(I.getOperand(1));
+        bwr::Expr res = src0->ule(*src1)->as_expr().select(src0->as_expr(), src1->as_expr());
+        return symex->value(res);
+    }
+    case llvm::Intrinsic::smax: {
+        vexa::value *src0 = symex->get(I.getOperand(0));
+        vexa::value *src1 = symex->get(I.getOperand(1));
+        bwr::Expr a = src0->as_expr();
+        bwr::Expr b = src1->as_expr();
+        return symex->value(a.sge(b).select(a, b));
+    }
+    case llvm::Intrinsic::smin: {
+        vexa::value *src0 = symex->get(I.getOperand(0));
+        vexa::value *src1 = symex->get(I.getOperand(1));
+        bwr::Expr a = src0->as_expr();
+        bwr::Expr b = src1->as_expr();
+        return symex->value(a.sle(b).select(a, b));
+    }
+    case llvm::Intrinsic::scmp: {
+        vexa::value *src0 = symex->get(I.getOperand(0));
+        vexa::value *src1 = symex->get(I.getOperand(1));
+        uint16_t dst_w = I.getType()->getPrimitiveSizeInBits();
+        bwr::Expr a = src0->as_expr();
+        bwr::Expr b = src1->as_expr();
+        bwr::Expr neg1 = ~context->bitwright_ctx.constant(dst_w, 0);
+        bwr::Expr zero = context->bitwright_ctx.constant(dst_w, 0);
+        bwr::Expr pos1 = context->bitwright_ctx.constant(dst_w, 1);
+        bwr::Expr res = a.slt(b).select(neg1, a.sgt(b).select(pos1, zero));
+        return symex->value(res);
+    }
+    case llvm::Intrinsic::ucmp: {
+        vexa::value *src0 = symex->get(I.getOperand(0));
+        vexa::value *src1 = symex->get(I.getOperand(1));
+        uint16_t dst_w = I.getType()->getPrimitiveSizeInBits();
+        bwr::Expr a = src0->as_expr();
+        bwr::Expr b = src1->as_expr();
+        bwr::Expr neg1 = ~context->bitwright_ctx.constant(dst_w, 0);
+        bwr::Expr zero = context->bitwright_ctx.constant(dst_w, 0);
+        bwr::Expr pos1 = context->bitwright_ctx.constant(dst_w, 1);
+        bwr::Expr res = a.ult(b).select(neg1, a.ugt(b).select(pos1, zero));
+        return symex->value(res);
+    }
+    case llvm::Intrinsic::uadd_sat: {
+        vexa::value *src0 = symex->get(I.getOperand(0));
+        vexa::value *src1 = symex->get(I.getOperand(1));
+        uint16_t w = I.getType()->getPrimitiveSizeInBits();
+        bwr::Expr a = src0->as_expr();
+        bwr::Expr b = src1->as_expr();
+        bwr::Expr sum = a + b;
+        bwr::Expr ones = ~context->bitwright_ctx.constant(w, 0);
+        return symex->value(sum.ult(a).select(ones, sum));
     }
     case llvm::Intrinsic::usub_sat: {
         vexa::value *src0 = symex->get(I.getOperand(0));
         vexa::value *src1 = symex->get(I.getOperand(1));
-
-        uint8_t bit_width = src0->size();
         uint8_t dst_bit_width = I.getType()->getPrimitiveSizeInBits();
-        VEXA_ASSERT(dst_bit_width == bit_width);
-
-        bw::Term zero = tm.mk_bv_zero(tm.mk_bv_sort(dst_bit_width));
-        bw::Term sub = (*src0 - *src1)->as_expr();
-        bw::Term result = tm.mk_term(bw::Kind::ITE, {src0->ult(*src1)->as_expr(), zero, sub});
-
-        VEXA_ASSERT(dst_bit_width == result.sort().bv_size());
-        return symex->value(std::move(result));
+        bwr::Expr zero = context->bitwright_ctx.constant(dst_bit_width, 0);
+        bwr::Expr sub = (*src0 - *src1)->as_expr();
+        bwr::Expr res = src0->ult(*src1)->as_expr().select(zero, sub);
+        return symex->value(res);
+    }
+    case llvm::Intrinsic::sadd_sat: {
+        vexa::value *src0 = symex->get(I.getOperand(0));
+        vexa::value *src1 = symex->get(I.getOperand(1));
+        uint16_t w = I.getType()->getPrimitiveSizeInBits();
+        bwr::Expr a = src0->as_expr();
+        bwr::Expr b = src1->as_expr();
+        bwr::Expr sum = a + b;
+        bwr::Expr zero = context->bitwright_ctx.constant(w, 0);
+        bwr::Expr smin = context->bitwright_ctx.constant(w, 1) << context->bitwright_ctx.constant(w, w - 1);
+        bwr::Expr smax = ~smin;
+        bwr::Expr ovf = (a.slt(zero).eq(b.slt(zero))) & (sum.slt(zero).ne(a.slt(zero)));
+        bwr::Expr sat = a.slt(zero).select(smin, smax);
+        return symex->value(ovf.select(sat, sum));
+    }
+    case llvm::Intrinsic::ssub_sat: {
+        vexa::value *src0 = symex->get(I.getOperand(0));
+        vexa::value *src1 = symex->get(I.getOperand(1));
+        uint16_t w = I.getType()->getPrimitiveSizeInBits();
+        bwr::Expr a = src0->as_expr();
+        bwr::Expr b = src1->as_expr();
+        bwr::Expr diff = a - b;
+        bwr::Expr zero = context->bitwright_ctx.constant(w, 0);
+        bwr::Expr smin = context->bitwright_ctx.constant(w, 1) << context->bitwright_ctx.constant(w, w - 1);
+        bwr::Expr smax = ~smin;
+        bwr::Expr ovf = (a.slt(zero).ne(b.slt(zero))) & (diff.slt(zero).ne(a.slt(zero)));
+        bwr::Expr sat = a.slt(zero).select(smin, smax);
+        return symex->value(ovf.select(sat, diff));
     }
     case llvm::Intrinsic::abs: {
         vexa::value *src = symex->get(I.getOperand(0));
-
-        uint32_t bit_width = src->size();
-        uint32_t dst_bit_width = I.getType()->getPrimitiveSizeInBits();
-        VEXA_ASSERT(bit_width > 0);
-        VEXA_ASSERT(dst_bit_width == bit_width);
-
-        bw::Term x = src->as_expr();
-        bw::Term zero = tm.mk_bv_zero(tm.mk_bv_sort(bit_width));
-        bw::Term is_negative = tm.mk_term(bw::Kind::BV_SLT, {x, zero});
-        bw::Term negated = tm.mk_term(bw::Kind::BV_SUB, {zero, x});
-        bw::Term result = tm.mk_term(bw::Kind::ITE, {is_negative, negated, x});
-
-        VEXA_ASSERT(dst_bit_width == result.sort().bv_size());
-        return symex->value(std::move(result));
+        bwr::Expr x = src->as_expr();
+        bwr::Expr zero = context->bitwright_ctx.constant(x.width(), 0);
+        bwr::Expr res = x.slt(zero).select(-x, x);
+        return symex->value(res);
     }
+    case llvm::Intrinsic::x86_bmi_pdep_32:
+    case llvm::Intrinsic::x86_bmi_pdep_64: {
+        vexa::value *src0 = symex->get(I.getOperand(0));
+        vexa::value *src1 = symex->get(I.getOperand(1));
+        return symex->value(src0->as_expr().pdep(src1->as_expr()));
+    }
+    case llvm::Intrinsic::x86_bmi_pext_32:
+    case llvm::Intrinsic::x86_bmi_pext_64: {
+        vexa::value *src0 = symex->get(I.getOperand(0));
+        vexa::value *src1 = symex->get(I.getOperand(1));
+        return symex->value(src0->as_expr().pext(src1->as_expr()));
+    }
+    case llvm::Intrinsic::expect:
+    case llvm::Intrinsic::expect_with_probability: {
+        return symex->get(I.getOperand(0));
+    }
+    case llvm::Intrinsic::is_constant: {
+        vexa::value *src = symex->get(I.getOperand(0));
+        return symex->concrete(src->is_concrete() ? 1 : 0, 1);
+    }
+    case llvm::Intrinsic::assume:
+    case llvm::Intrinsic::sideeffect:
+    case llvm::Intrinsic::pseudoprobe:
+    case llvm::Intrinsic::dbg_declare:
+    case llvm::Intrinsic::dbg_value:
+    case llvm::Intrinsic::dbg_label:
+    case llvm::Intrinsic::invariant_start:
+    case llvm::Intrinsic::invariant_end:
     case llvm::Intrinsic::lifetime_start:
     case llvm::Intrinsic::lifetime_end:
         break;
     default:
         THROW("CallInst: unimplemented llvm intrinsic -> {}", callee->getName().str());
     }
-
     return symex->concrete(0, 64);
 }

@@ -1,296 +1,497 @@
 #include "vexa/passes/predicate_solver.hpp"
-#include "bitwuzla/cpp/sat_solver.h"
-#include <llvm/IR/InstrTypes.h>
-#include <llvm/Support/Casting.h>
+
+#include <llvm/IR/Instruction.h>
+#include <unordered_set>
 #include <vexa/vexa.h>
 
-#include <llvm/IR/CFG.h>
-#include <llvm/IR/Dominators.h>
-#include <llvm/IR/Instruction.h>
+#include <llvm/ADT/PostOrderIterator.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Instructions.h>
+#include <llvm/IR/Intrinsics.h>
+#include <llvm/IR/IntrinsicsX86.h>
 
-/*
-struct PathConstraint
+using SymMap = std::unordered_map<std::string, llvm::Value *>;
+using ExprCache = std::unordered_map<bw_expr, llvm::Value *>;
+
+// ── bwr::Expr → llvm::Value* ────────────────────────────────────────────────
+
+static llvm::Value *bwr_to_llvm(
+    bwr::Expr expr,
+    llvm::IRBuilder<> &B,
+
+    ExprCache &cache,
+    const SymMap &sym)
+
 {
-    llvm::Value *condition;
-    bool expected_value;
-};
+    bw_expr handle = expr.raw();
+    auto it = cache.find(handle);
 
-std::vector<PathConstraint>
-    collect_path_constraints(llvm::Instruction *target_inst, llvm::DominatorTree &DT)
-{
-    std::vector<PathConstraint> constraints;
-    llvm::BasicBlock *target_bb = target_inst->getParent();
+    if (it != cache.end())
+        return it->second;
 
-    llvm::DomTreeNode *curr_node = DT.getNode(target_bb);
-    while (curr_node) {
-        llvm::DomTreeNode *idom_node = curr_node->getIDom();
-        if (!idom_node) {
+    bwr::Node n = expr.node();
+    llvm::LLVMContext &ctx = B.getContext();
+    llvm::Type *ty = llvm::IntegerType::get(ctx, n.width);
+    llvm::Value *result = nullptr;
+
+    switch (n.kind) {
+    case bwr::Kind::Const: {
+        auto val = expr.value();
+        if (!val)
+            return nullptr;
+
+        auto u64 = val->to_u64();
+        if (!u64)
+            return nullptr;
+        result = llvm::ConstantInt::get(ty, *u64);
+        break;
+    }
+    case bwr::Kind::Symbol: {
+        auto name = expr.name();
+
+        if (!name)
+            return nullptr;
+
+        auto sit = sym.find(*name);
+        if (sit == sym.end())
+            return nullptr;
+        llvm::Value *v = sit->second;
+        if (v->getType() == ty)
+            result = v;
+        else if (v->getType()->getIntegerBitWidth() < n.width)
+            result = B.CreateZExt(v, ty);
+        else
+            result = B.CreateTrunc(v, ty);
+        break;
+    }
+    case bwr::Kind::Unary: {
+        if (n.children.empty())
+            return nullptr;
+
+        llvm::Value *x = bwr_to_llvm(n.children[0], B, cache, sym);
+        if (!x)
+            return nullptr;
+
+        switch (static_cast<bwr::UnOp>(n.op)) {
+        case bwr::UnOp::Not:
+            result = B.CreateNot(x);
+            break;
+
+        case bwr::UnOp::Neg:
+            result = B.CreateNeg(x);
+            break;
+        case bwr::UnOp::Popcnt:
+            result = B.CreateUnaryIntrinsic(llvm::Intrinsic::ctpop, x);
+            break;
+        case bwr::UnOp::Clz:
+            result =
+                B.CreateBinaryIntrinsic(llvm::Intrinsic::ctlz, x, llvm::ConstantInt::getFalse(ctx));
+            break;
+        case bwr::UnOp::Ctz:
+            result =
+                B.CreateBinaryIntrinsic(llvm::Intrinsic::cttz, x, llvm::ConstantInt::getFalse(ctx));
+            break;
+        case bwr::UnOp::Bswap:
+            result = B.CreateUnaryIntrinsic(llvm::Intrinsic::bswap, x);
+            break;
+        case bwr::UnOp::BitRev:
+            result = B.CreateUnaryIntrinsic(llvm::Intrinsic::bitreverse, x);
+            break;
+        default:
+            return nullptr;
+        }
+
+        break;
+    }
+    case bwr::Kind::Binary: {
+        if (n.children.size() < 2)
+            return nullptr;
+
+        llvm::Value *a = bwr_to_llvm(n.children[0], B, cache, sym);
+        llvm::Value *b = bwr_to_llvm(n.children[1], B, cache, sym);
+
+        if (!a || !b)
+            return nullptr;
+
+        switch (static_cast<bwr::BinOp>(n.op)) {
+        case bwr::BinOp::Add:
+            result = B.CreateAdd(a, b);
+            break;
+        case bwr::BinOp::Sub:
+            result = B.CreateSub(a, b);
+            break;
+        case bwr::BinOp::Mul:
+            result = B.CreateMul(a, b);
+            break;
+        case bwr::BinOp::UDiv:
+            result = B.CreateUDiv(a, b);
+            break;
+        case bwr::BinOp::URem:
+            result = B.CreateURem(a, b);
+            break;
+        case bwr::BinOp::SDiv:
+            result = B.CreateSDiv(a, b);
+            break;
+        case bwr::BinOp::SRem:
+            result = B.CreateSRem(a, b);
+            break;
+        case bwr::BinOp::And:
+            result = B.CreateAnd(a, b);
+            break;
+        case bwr::BinOp::Or:
+            result = B.CreateOr(a, b);
+            break;
+        case bwr::BinOp::Xor:
+            result = B.CreateXor(a, b);
+            break;
+        case bwr::BinOp::Shl:
+            result = B.CreateShl(a, b);
+            break;
+        case bwr::BinOp::LShr:
+            result = B.CreateLShr(a, b);
+            break;
+        case bwr::BinOp::AShr:
+            result = B.CreateAShr(a, b);
+            break;
+        case bwr::BinOp::RotL:
+            result = B.CreateIntrinsic(llvm::Intrinsic::fshl, {ty}, {a, a, b});
+            break;
+        case bwr::BinOp::RotR:
+            result = B.CreateIntrinsic(llvm::Intrinsic::fshr, {ty}, {a, a, b});
+            break;
+        case bwr::BinOp::UMulHi: {
+            unsigned w = n.width;
+            llvm::Type *wide = llvm::IntegerType::get(ctx, w * 2);
+            result = B.CreateTrunc(
+                B.CreateLShr(
+                    B.CreateMul(B.CreateZExt(a, wide), B.CreateZExt(b, wide)),
+
+                    llvm::ConstantInt::get(wide, w)),
+                ty);
             break;
         }
+        case bwr::BinOp::SMulHi: {
+            unsigned w = n.width;
+            llvm::Type *wide = llvm::IntegerType::get(ctx, w * 2);
+            result = B.CreateTrunc(
+                B.CreateAShr(
+                    B.CreateMul(B.CreateSExt(a, wide), B.CreateSExt(b, wide)),
 
-        llvm::BasicBlock *idom_bb = idom_node->getBlock();
-        llvm::Instruction *term = idom_bb->getTerminator();
-
-        if (auto *br = llvm::dyn_cast<llvm::BranchInst>(term)) {
-            if (br->isConditional()) {
-                llvm::Value *cond = br->getCondition();
-                llvm::BasicBlock *true_bb = br->getSuccessor(0);
-                llvm::BasicBlock *false_bb = br->getSuccessor(1);
-
-                if (DT.dominates(llvm::BasicBlockEdge(idom_bb, true_bb), target_bb)) {
-                    constraints.push_back({cond, true});
-                }
-                else if (DT.dominates(llvm::BasicBlockEdge(idom_bb, false_bb), target_bb)) {
-                    constraints.push_back({cond, false});
-                }
-            }
+                    llvm::ConstantInt::get(wide, w)),
+                ty);
+            break;
         }
-        else if (auto *sw = llvm::dyn_cast<llvm::SwitchInst>(term)) {
-            llvm::Value *cond = sw->getCondition();
-            for (auto &Case : sw->cases()) {
-                llvm::BasicBlock *case_bb = Case.getCaseSuccessor();
-                if (DT.dominates(llvm::BasicBlockEdge(idom_bb, case_bb), target_bb)) {
-                }
-            }
+        case bwr::BinOp::Pdep:
+            result = B.CreateIntrinsic(
+                n.width == 32 ? llvm::Intrinsic::x86_bmi_pdep_32 : llvm::Intrinsic::x86_bmi_pdep_64,
+                {},
+                {a, b});
+            break;
+        case bwr::BinOp::Pext:
+            result = B.CreateIntrinsic(
+                n.width == 32 ? llvm::Intrinsic::x86_bmi_pext_32 : llvm::Intrinsic::x86_bmi_pext_64,
+                {},
+                {a, b});
+            break;
+        default:
+            return nullptr;
+        }
+        break;
+    }
+    case bwr::Kind::Compare: {
+        if (n.children.size() < 2)
+            return nullptr;
+        llvm::Value *a = bwr_to_llvm(n.children[0], B, cache, sym);
+        llvm::Value *b = bwr_to_llvm(n.children[1], B, cache, sym);
+        if (!a || !b)
+            return nullptr;
+        llvm::CmpInst::Predicate pred;
+        switch (static_cast<bwr::CmpOp>(n.op)) {
+        case bwr::CmpOp::Eq:
+            pred = llvm::CmpInst::ICMP_EQ;
+            break;
+        case bwr::CmpOp::Ne:
+            pred = llvm::CmpInst::ICMP_NE;
+            break;
+        case bwr::CmpOp::Ult:
+            pred = llvm::CmpInst::ICMP_ULT;
+            break;
+        case bwr::CmpOp::Ule:
+            pred = llvm::CmpInst::ICMP_ULE;
+            break;
+        case bwr::CmpOp::Ugt:
+            pred = llvm::CmpInst::ICMP_UGT;
+            break;
+        case bwr::CmpOp::Uge:
+            pred = llvm::CmpInst::ICMP_UGE;
+            break;
+        case bwr::CmpOp::Slt:
+            pred = llvm::CmpInst::ICMP_SLT;
+            break;
+        case bwr::CmpOp::Sle:
+            pred = llvm::CmpInst::ICMP_SLE;
+            break;
+        case bwr::CmpOp::Sgt:
+            pred = llvm::CmpInst::ICMP_SGT;
+            break;
+        case bwr::CmpOp::Sge:
+            pred = llvm::CmpInst::ICMP_SGE;
+            break;
+        default:
+            return nullptr;
         }
 
-        curr_node = idom_node;
+        result = B.CreateICmp(pred, a, b);
+        break;
+    }
+    case bwr::Kind::Zext: {
+        if (n.children.empty())
+            return nullptr;
+        llvm::Value *x = bwr_to_llvm(n.children[0], B, cache, sym);
+        if (!x)
+            return nullptr;
+        result = B.CreateZExt(x, ty);
+        break;
+    }
+    case bwr::Kind::Sext: {
+        if (n.children.empty())
+            return nullptr;
+        llvm::Value *x = bwr_to_llvm(n.children[0], B, cache, sym);
+        if (!x)
+            return nullptr;
+        result = B.CreateSExt(x, ty);
+        break;
+    }
+    case bwr::Kind::Extract: {
+        if (n.children.empty())
+            return nullptr;
+        llvm::Value *x = bwr_to_llvm(n.children[0], B, cache, sym);
+        if (!x)
+            return nullptr;
+        if (n.lo != 0)
+            x = B.CreateLShr(x, llvm::ConstantInt::get(x->getType(), n.lo));
+        result = B.CreateTrunc(x, ty);
+        break;
+    }
+    case bwr::Kind::Concat: {
+        if (n.children.size() < 2)
+            return nullptr;
+        llvm::Value *hi = bwr_to_llvm(n.children[0], B, cache, sym);
+        llvm::Value *lo = bwr_to_llvm(n.children[1], B, cache, sym);
+        if (!hi || !lo)
+            return nullptr;
+        uint16_t lo_w = n.children[1].width();
+        result = B.CreateOr(
+            B.CreateShl(B.CreateZExt(hi, ty), llvm::ConstantInt::get(ty, lo_w)),
+
+            B.CreateZExt(lo, ty));
+        break;
+    }
+    case bwr::Kind::Select: {
+        if (n.children.size() < 3)
+            return nullptr;
+
+        llvm::Value *c = bwr_to_llvm(n.children[0], B, cache, sym);
+        llvm::Value *t = bwr_to_llvm(n.children[1], B, cache, sym);
+        llvm::Value *e = bwr_to_llvm(n.children[2], B, cache, sym);
+
+        if (!c || !t || !e)
+            return nullptr;
+
+        if (!c->getType()->isIntegerTy(1))
+            c = B.CreateICmpNE(c, llvm::ConstantInt::get(c->getType(), 0));
+        result = B.CreateSelect(c, t, e);
+        break;
+    }
+    default:
+        return nullptr;
     }
 
-    return constraints;
-}
-*/
+    if (result)
+        cache[handle] = result;
 
-bool is_leaf(llvm::Instruction *I)
+    return result;
+}
+
+static void blacklist_slice(
+    llvm::Instruction *inst,
+    std::unordered_set<llvm::Value *> &bl,
+    std::unordered_set<llvm::Instruction *> &visited)
+
 {
-    if (llvm::isa<llvm::LoadInst>(I) || llvm::isa<llvm::PHINode>(I))
-        return true;
-    return false;
+    if (!inst || !visited.insert(inst).second)
+        return;
+
+    bl.insert(inst);
+    if (llvm::isa<llvm::LoadInst>(inst) || llvm::isa<llvm::PHINode>(inst))
+        return;
+    for (llvm::Use &op : inst->operands())
+        if (auto *oi = llvm::dyn_cast<llvm::Instruction>(op.get()))
+            blacklist_slice(oi, bl, visited);
 }
 
-std::vector<llvm::Instruction *> slice_backward(llvm::Instruction *I)
+static SymMap build_sym_map(llvm::Function *func, vexa::symex *sx)
 {
-    std::vector<llvm::Instruction *> slice;
-    std::vector<llvm::Instruction *> worklist;
+    SymMap m;
+    auto try_add = [&](llvm::Value *v) {
+        if (!sx->is_sync(v))
+            return;
 
-    worklist.push_back(llvm::dyn_cast<llvm::Instruction>(I));
-    slice.push_back(I);
+        vexa::value *val = nullptr;
+        try {
+            val = sx->get(v);
+        } catch (...) {
+            return;
+        }
 
-    while (!worklist.empty()) {
-        llvm::Instruction *current = worklist.back();
-        worklist.pop_back();
+        if (!val)
+            return;
 
-        if (is_leaf(current))
-            continue;
+        bwr::Expr e = val->as_expr();
+        if (e.kind() != bwr::Kind::Symbol)
+            return;
+        auto name = e.name();
+        if (name)
+            m.emplace(*name, v);
+    };
 
-        std::vector<llvm::Value *> operands;
-        for (auto &op : current->operands()) {
-            llvm::Value *operand = op.get();
-            if (auto *op_inst = llvm::dyn_cast<llvm::Instruction>(operand)) {
-                if (std::find(slice.begin(), slice.end(), op_inst) == slice.end()) {
-                    slice.push_back(op_inst);
-                    worklist.push_back(op_inst);
-                }
+    for (auto &arg : func->args())
+        try_add(&arg);
+
+    for (auto &BB : *func)
+        for (auto &I : BB)
+            try_add(&I);
+
+    return m;
+}
+static void collect_pred_terms(bwr::Expr e, std::vector<bwr::Expr>& syms, std::vector<uint64_t>& consts, std::unordered_set<uint32_t>& visited) {
+    if (!e) return;
+    uint32_t h = e.raw();
+    if (!visited.insert(h).second) return;
+    bwr::Node n = e.node();
+    if (n.kind == bwr::Kind::Symbol) {
+        syms.push_back(e);
+    } else if (n.kind == bwr::Kind::Const) {
+        if (auto v = e.value()) {
+            uint64_t c = v->limb(0);
+            for (uint64_t cand : {c, c + 1, c - 1, (uint64_t)(-(int64_t)c), ~c}) {
+                consts.push_back(cand);
             }
         }
     }
-
-    return slice;
+    for (const auto& ch : n.children) {
+        collect_pred_terms(ch, syms, consts, visited);
+    }
 }
 
-llvm::Instruction *find_common_ancestor(llvm::Instruction *I)
-{
-    if (is_leaf(I))
-        return I;
-
-    llvm::Instruction *common_ancestor = nullptr;
-
-    std::vector<llvm::Instruction *> op_insts;
-    for (llvm::Use &op : I->operands()) {
-        if (auto *inst = llvm::dyn_cast<llvm::Instruction>(op.get())) {
-            op_insts.push_back(inst);
-        }
-    }
-
-    auto first_slice = slice_backward(llvm::dyn_cast<llvm::Instruction>(op_insts.front()));
-
-    for (auto it = std::next(op_insts.begin()); it != op_insts.end(); ++it) {
-        llvm::Instruction *op = llvm::dyn_cast<llvm::Instruction>(*it);
-        auto slice = slice_backward(op);
-
-        if (common_ancestor == nullptr) {
-            for (auto *inst : first_slice) {
-                if (std::find(slice.begin(), slice.end(), inst) != slice.end()) {
-                    common_ancestor = inst;
-                    break;
-                }
-            }
-        }
-        else {
-            if (std::find(slice.begin(), slice.end(), common_ancestor) == slice.end()) {
-                common_ancestor = nullptr;
-                break;
-            }
-        }
-    }
-    return common_ancestor;
-}
 
 bool vexa::passes::predicate_solver::run(llvm::Function *func)
 {
-    for (auto &BB : *func) {
-        for (auto it = BB.rbegin(), end = BB.rend(); it != end; ++it) {
-            llvm::Instruction *I = &*it;
-            llvm::Value *cond = nullptr;
-
-            if (auto *select = llvm::dyn_cast<llvm::SelectInst>(I))
-                cond = select->getCondition();
-            else if (auto *br = llvm::dyn_cast<llvm::BranchInst>(I))
-                if (br->isConditional())
-                    cond = br->getCondition();
-
-            if (!cond)
-                continue;
-
-            if (!blacklist.insert(cond).second)
-                continue;
-
-            llvm::Instruction *current_node = llvm::dyn_cast<llvm::Instruction>(cond);
-            while (current_node) {
-                if (is_leaf(current_node))
-                    break;
-
-                // collect non-constant instructions from operands
-                //
-                std::vector<llvm::Instruction *> operands;
-                for (auto &op : current_node->operands()) {
-                    llvm::Value *operand = op.get();
-                    if (auto *inst = llvm::dyn_cast<llvm::Instruction>(operand)) {
-                        operands.push_back(inst);
-                    }
-                }
-
-                if (operands.size() == 1) {
-                    current_node = operands.front();
-                    continue;
-                }
-
-                llvm::Instruction *common_ancestor = find_common_ancestor(current_node);
-                if (!common_ancestor)
-                    break;
-
-                current_node = common_ancestor;
-            }
-
-            if (!current_node || current_node == cond)
-                continue;
-
-            std::vector<llvm::Instruction *> slice =
-                slice_backward(llvm::dyn_cast<llvm::Instruction>(cond));
-
-            bool has_phi = false;
-            for (llvm::Instruction *inst : slice) {
-                if (llvm::isa<llvm::PHINode>(inst)) {
-                    has_phi = true;
-                    break;
-                }
-            }
-
-            if (has_phi)
-                continue;
-            
-            // clear stale cache entries in the slice to force re-evaluation
-            //
-            for (llvm::Instruction *inst : slice) {
-                if (inst != current_node && !is_leaf(inst)) {
-                    symex->erase(inst);
-                }
-            }
-
-            bw::Term term;
-            vexa::value *cond_sym = nullptr;
-            try {
-                term = symex->get(current_node)->as_expr();
-                cond_sym = symex->get(cond);
-            } catch (const std::exception &e) {
-                continue;
-            }
-
-            LOG_DEBUG(logger, "Term: {}", term.str(16));
-
-            std::vector<uint8_t> check_list{0, 1};
-
-            for (auto check_cond : check_list) {
-                bw::Term cond_assumption =
-                    (*cond_sym == *symex->concrete(check_cond, 1))->as_expr();
-                std::vector<bw::Term> assumptions = {cond_assumption};
-
-                std::vector<bw::Term> solved_values;
-                bw::Result res;
-                while (solved_values.size() < 4) {
-                    res = context->bitwuzla->check_sat(assumptions);
-
-                    if (res != bw::Result::SAT) {
-                        break;
-                    }
-
-                    bw::Term evaluated = context->bitwuzla->get_value(term);
-                    bw::Term eq = context->term_manager.mk_term(bw::Kind::EQUAL, {term, evaluated});
-                    bw::Term block = context->term_manager.mk_term(bw::Kind::NOT, {eq});
-
-                    assumptions.push_back(block);
-                    solved_values.push_back(evaluated);
-                }
-
-                if (res != bw::Result::UNSAT)
-                    continue;
-
-                for (auto &solved : solved_values) {
-                    LOG_DEBUG(logger, "Solved: {}", solved.str(16));
-                }
-
-                // recreate the condition with new solved values
-                //
-                builder->SetInsertPoint(llvm::dyn_cast<llvm::Instruction>(cond));
-                uint8_t size = current_node->getType()->getPrimitiveSizeInBits();
-                uint64_t uint64 =
-                    llvm::APInt(size, solved_values.front().value<std::string>(10), 10)
-                        .getZExtValue();
-
-                llvm::CmpInst::Predicate predicate = (check_cond == 1)
-                                                         ? llvm::CmpInst::Predicate::ICMP_EQ
-                                                         : llvm::CmpInst::Predicate::ICMP_NE;
-                llvm::Value *new_cond =
-                    builder->CreateICmp(predicate, current_node, builder->getIntN(size, uint64));
-                blacklist.insert(new_cond);
-
-                for (size_t i = 1; i < solved_values.size(); i++) {
-                    bw::Term solved_value = solved_values[i];
-                    uint64 =
-                        llvm::APInt(size, solved_value.value<std::string>(10), 10).getZExtValue();
-
-                    llvm::CmpInst::Predicate predicate = check_cond == 1
-                                                             ? llvm::CmpInst::Predicate::ICMP_EQ
-                                                             : llvm::CmpInst::Predicate::ICMP_NE;
-                    llvm::Value *_cond = builder->CreateICmp(
-                        predicate, current_node, builder->getIntN(size, uint64));
-
-                    if (check_cond == 1) {
-                        new_cond = builder->CreateOr(new_cond, _cond);
-                    }
-                    else {
-                        new_cond = builder->CreateAnd(new_cond, _cond);
-                    }
-
-                    blacklist.insert(new_cond);
-                }
-
-                cond->replaceAllUsesWith(new_cond);
-                return true;
+    for (llvm::BasicBlock &BB : *func) {
+        for (llvm::Instruction &I : BB) {
+            if (!llvm::isa<llvm::LoadInst>(&I)) {
+                symex->erase(&I);
             }
         }
     }
 
-    return false;
+    SymMap sym = build_sym_map(func, symex.get());
+    llvm::IRBuilder<> B(func->getContext());
+    std::vector<llvm::Instruction *> to_delete;
+    bool changed = false;
+
+    for (llvm::BasicBlock &BB : *func) {
+        for (auto it = BB.begin(), end = BB.end(); it != end; ++it) {
+            llvm::Instruction *inst = &*it;
+
+            if (!blacklist.insert(inst).second && true)
+                continue;
+
+            llvm::Type *ty = inst->getType();
+            if (!ty->isIntegerTy() || inst->isTerminator() || llvm::isa<llvm::StoreInst>(inst)
+                || llvm::isa<llvm::LoadInst>(inst) || llvm::isa<llvm::PHINode>(inst))
+            {
+                continue;
+            }
+
+            vexa::value *sym_val = nullptr;
+            try {
+                sym_val = symex->get(inst);
+            } catch (...) {
+                continue;
+            }
+            if (!sym_val)
+                continue;
+
+            bwr::Expr original = sym_val->as_expr();
+            if (original.kind() == bwr::Kind::Const)
+                continue;
+
+            auto outcomes = context->bitwright_engine->run({original});
+            bwr::Expr simplified = outcomes.empty() ? original : outcomes[0].expr;
+            if (simplified.width() == 1 || simplified.kind() == bwr::Kind::Select) {
+                if (auto syn = bwr::synthesize(simplified, 5)) {
+                    simplified = *syn;
+                }
+            }
+            // If a 1-bit predicate remains in complex MBA form, verify candidate comparisons
+            // using Bitwright's native CDCL SAT prover (bwr::equivalent).
+            if (simplified.width() == 1 && simplified.kind() != bwr::Kind::Compare) {
+                std::vector<bwr::Expr> vars;
+                std::vector<uint64_t> cand_consts;
+                std::unordered_set<uint32_t> visited_nodes;
+                collect_pred_terms(simplified, vars, cand_consts, visited_nodes);
+                if (!vars.empty() && vars.size() <= 2) {
+                    std::sort(cand_consts.begin(), cand_consts.end());
+                    cand_consts.erase(std::unique(cand_consts.begin(), cand_consts.end()), cand_consts.end());
+                    if (cand_consts.size() > 12) cand_consts.resize(12);
+                    bwr::Expr target_var = vars[0];
+                    uint16_t vw = target_var.width();
+                    bool found_equiv = false;
+                    for (uint64_t K : cand_consts) {
+                        bwr::Expr K_expr = context->bitwright_ctx.constant(vw, K);
+                        for (bwr::CmpOp op : {bwr::CmpOp::Eq, bwr::CmpOp::Ne, bwr::CmpOp::Sle, bwr::CmpOp::Slt}) {
+                            bwr::Expr cand_cmp = target_var.cmp(op, K_expr);
+                            if (bwr::equivalent(simplified, cand_cmp, 50000) == true) {
+                                simplified = cand_cmp;
+                                found_equiv = true;
+                                break;
+                            }
+                        }
+                        if (found_equiv) break;
+                    }
+                }
+            }
+            if (simplified == original)
+                continue;
+            if (simplified.width() != original.width())
+                continue;
+
+            B.SetInsertPoint(inst);
+            ExprCache cache;
+            llvm::Value *new_val = bwr_to_llvm(simplified, B, cache, sym);
+            if (!new_val || new_val->getType() != ty)
+                continue;
+
+            LOG_DEBUG(logger, "Rewrote {} -> {}", original.str(), simplified.str());
+
+            symex->set(new_val, symex->value(simplified));
+            inst->replaceAllUsesWith(new_val);
+
+            std::unordered_set<llvm::Instruction *> visited;
+            blacklist_slice(llvm::dyn_cast<llvm::Instruction>(new_val), blacklist, visited);
+
+            to_delete.push_back(inst);
+        }
+    }
+
+    for (auto it = to_delete.rbegin(); it != to_delete.rend(); ++it) {
+        if ((*it)->use_empty()) {
+            symex->erase(*it);
+            (*it)->eraseFromParent();
+        }
+    }
+
+    return true;
 }

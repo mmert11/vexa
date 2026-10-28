@@ -91,7 +91,5 @@ class memory
   private:
     vexa::context *context;
     std::vector<std::shared_ptr<mem_page>> pages;
-    using hash_ty = std::hash<bw::Term>;
-    hash_ty hash;
 };
 } // namespace vexa

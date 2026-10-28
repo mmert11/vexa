@@ -63,7 +63,7 @@ class cpu
             vexa::value *address,
             size_t size,
             bool write,
-            const std::vector<bw::Term> &values);
+            const std::vector<bwr::Expr> &values);
         llvm::BasicBlock *write_memory_intrinsic(llvm::CallInst &intrinsic_call, size_t size);
         llvm::BasicBlock *read_memory_intrinsic(llvm::CallInst &intrinsic_call, size_t size);
         void write_memory(vexa::pointer *addr, vexa::value *val);
@@ -97,7 +97,7 @@ class cpu
         llvm::BasicBlock *bb;
         bool vjmp;
         std::unordered_map<uint64_t, llvm::BasicBlock *> path;
-        std::vector<bw::Term> path_constraints;
+        std::vector<bwr::Expr> path_constraints;
     };
 
     friend emulator;
@@ -145,7 +145,7 @@ class cpu
     int lifted_count = 0;
     uint64_t VPC = 0;
     std::stack<snapshot> unexplored_paths;
-    std::vector<bw::Term> path_constraints;
+    std::vector<bwr::Expr> path_constraints;
 
     // vexa::utils::OrderedMap<uint64_t, llvm::BasicBlock*> CFG;
     std::unordered_map<uint64_t, llvm::BasicBlock *> CFG, VCFG, PATH;

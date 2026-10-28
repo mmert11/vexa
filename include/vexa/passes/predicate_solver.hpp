@@ -14,7 +14,7 @@ class predicate_solver : public vexa::ir::pass
   public:
     predicate_solver(vexa::context *ctx) : pass(ctx) {}
     bool run(llvm::Function *func) override;
-    bool is_recursive() override { return true; }
+    bool is_recursive() override { return false; }
   private:
     std::unordered_set<llvm::Value*> blacklist;
 };

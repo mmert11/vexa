@@ -2,6 +2,7 @@
 #include <vexa/vexa.h>
 
 #include <queue>
+#include <unordered_set>
 
 bool vexa::passes::state_cleanup::run(llvm::Function *func)
 {

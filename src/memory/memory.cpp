@@ -20,9 +20,10 @@ void vexa::memory::write(vexa::pointer *addr, vexa::value *val)
     // concrete write
     if (addr->is_concrete()) {
         uint64_t base = addr->as_uint64();
-        uint8_t byte_size = val->size() / 8;
+        uint8_t byte_size = std::max<uint8_t>(1, (val->size() + 7) / 8);
+        vexa::value *simplified_val = val->simplify();
         for (uint8_t i = 0; i < byte_size; i++) {
-            mem_cell cell{val->simplify(), byte_size, i};
+            mem_cell cell{simplified_val, byte_size, i};
             page->write(base + i, std::move(cell));
         }
     }
@@ -127,7 +128,7 @@ vexa::value *vexa::memory::read(vexa::pointer *addr, int size)
     else {
         LOG_WARNING(logger, "Symbolic memory read! Addr: {}", addr->as_expr().str());
         return context->symex->symbolic(
-            "read_" + std::to_string(std::hash<bw::Term>{}(addr->as_expr())), size);
+            "read_" + std::to_string(addr->as_expr().raw()), size);
     }
 }
 

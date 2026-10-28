@@ -1,11 +1,12 @@
 #pragma once
-#include <bitwuzla/cpp/bitwuzla.h>
+#include <bitwright.hpp>
 #include <llvm/IR/Value.h>
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
-namespace bw = bitwuzla;
+namespace bwr = bitwright;
 
 namespace vexa
 {
@@ -14,6 +15,13 @@ template <typename To, typename From> To *dyn_cast(From *Val)
 {
     return To::classof(Val) ? static_cast<To *>(Val) : nullptr;
 }
+
+enum struct result
+{
+    sat,
+    unsat,
+    unknown
+};
 
 struct mem_page;
 class symex;
@@ -28,15 +36,15 @@ class value
 
     value(vexa::context *c);
     value(vexa::context *c, kind k);
-    value(vexa::context *c, bw::Term e, bw::TermManager &tm, bw::Bitwuzla &bzla);
+    value(vexa::context *c, bwr::Expr e);
 
-    std::vector<bw::Term> possible_values(
-        const std::vector<bw::Term> &constraints = {},
-        bw::Result *result = nullptr);
+    std::vector<bwr::Expr> possible_values(
+        const std::vector<bwr::Expr> &constraints = {},
+        result *res = nullptr);
     value *simplify();
-    value *simplify(const std::vector<bw::Term> &constraints);
-    bw::Term as_expr() const;
-    bw::Term as_expr_bool() const;
+    value *simplify(const std::vector<bwr::Expr> &constraints);
+    bwr::Expr as_expr() const;
+    bwr::Expr as_expr_bool() const;
     vexa::value *operator+(const value &rhs) const;
     vexa::value *operator-(const value &rhs) const;
     vexa::value *operator*(const value &rhs) const;
@@ -69,7 +77,7 @@ class value
     vexa::value *sext(uint64_t amount) const;
     vexa::value *ite(const value &then_value, const value &else_value) const;
     uint64_t as_uint64() const;
-    static uint64_t as_uint64(const bw::Term &term);
+    static uint64_t as_uint64(const bwr::Expr &expr);
     uint64_t size() const;
     bool is_symbolic() const;
     bool is_concrete() const;
@@ -82,20 +90,14 @@ class value
     value(const value &other, kind k)
         : context(other.context),
           _kind(k),
-          term(other.term),
-          term_manager(other.term_manager),
-          solver(other.solver),
+          expr(other.expr),
           simplified(other.simplified)
     {}
 
   private:
-    vexa::value *unary(bw::Kind op) const;
-    vexa::value *binary(bw::Kind op, const value &rhs) const;
     vexa::context *context;
     const kind _kind;
-    bw::Term term;
-    bw::TermManager *term_manager;
-    bw::Bitwuzla *solver;
+    bwr::Expr expr;
     bool simplified = false;
 };
 

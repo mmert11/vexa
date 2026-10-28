@@ -37,11 +37,11 @@ int main(int argc, char **argv)
     cli.add_flag(
         "--no-constant-propagation",
         no_constant_propagation,
-        "Disable Bitwuzla powered constant propagation");
+        "Disable Bitwright powered constant propagation");
     cli.add_flag(
         "--no-opaque-solving",
         no_opaque_solving,
-        "Disables opaque predicate solving with Bitwuzla");
+        "Disables opaque predicate solving with Bitwright");
     cli.add_flag("--cfg-recovery", cfg_recovery, "Enables CFG recovery mode");
     cli.add_flag("--vcfg-recovery", vcfg_recovery, "Enables Virtual CFG recovery mode");
     cli.add_flag(

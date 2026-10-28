@@ -4,12 +4,8 @@ vexa::context::context(vexa::engine *_engine, vexa::arch _arch)
 {
     llvm_context = std::make_unique<llvm::LLVMContext>();
 
-    bitwuzla_options.set(bw::Option::PRODUCE_MODELS, 1);
-    bitwuzla_options.set(bitwuzla::Option::REWRITE_LEVEL, (int)2);
-    bitwuzla_options.set(bitwuzla::Option::PREPROCESS, (int)1);
-    bitwuzla_options.set(bitwuzla::Option::ABSTRACTION, (int)1);
-    bitwuzla_options.set(bw::Option::TIME_LIMIT_PER, 5000);
-    bitwuzla = std::make_unique<bw::Bitwuzla>(term_manager, bitwuzla_options);
+    bwr::EngineBuilder eb(bwr::Preset::Deobfuscate);
+    bitwright_engine = std::make_unique<bwr::Engine>(eb.build());
 
     engine = _engine;
     memory = std::make_shared<vexa::memory>(this);

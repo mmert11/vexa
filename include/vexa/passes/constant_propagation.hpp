@@ -16,7 +16,7 @@ namespace vexa
 namespace passes
 {
 
-// Replacing the values which can be conretized with constants using Bitwuzla
+// Replacing the values which can be concretized with constants using Bitwright
 class constant_propagation : public vexa::ir::pass
 {
     class value_simplifier
