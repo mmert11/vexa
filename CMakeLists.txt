@@ -99,6 +99,9 @@ if(NOT quill_FOUND)
             GIT_SHALLOW    TRUE
         )
         FetchContent_MakeAvailable(quill)
+        if(TARGET quill AND NOT TARGET quill::quill)
+            add_library(quill::quill ALIAS quill)
+        endif()
     endif()
 endif()
 
@@ -135,10 +138,13 @@ if(NOT LIEF_FOUND)
         FetchContent_Declare(
             LIEF
             GIT_REPOSITORY https://github.com/lief-project/LIEF.git
-            GIT_TAG        0.15.1
+            GIT_TAG        0.17.6
             GIT_SHALLOW    TRUE
         )
         FetchContent_MakeAvailable(LIEF)
+        if(TARGET LIB_LIEF AND NOT TARGET LIEF::LIEF)
+            add_library(LIEF::LIEF ALIAS LIB_LIEF)
+        endif()
     endif()
 endif()
 

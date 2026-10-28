@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <fstream>
 #include <vexa/vexa.h>
 
 std::vector<uint8_t> vexa::binary::read_binary_file(const std::string &filename)

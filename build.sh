@@ -20,9 +20,10 @@ fi
 if [ ! -f "external/remill/install/lib/libremill_arch.a" ] && [ ! -f "external/remill/install/lib/remill_arch.lib" ]; then
     echo "Building remill..."
     cmake -G Ninja -S external/remill/dependencies -B external/remill/dependencies/build \
+        -DUSE_EXTERNAL_LLVM=ON \
         -DCMAKE_INSTALL_PREFIX="$SCRIPT_DIR/external/remill/install" \
         -DCMAKE_BUILD_TYPE=Release
-    cmake --build external/remill/dependencies/build --target install --parallel
+    cmake --build external/remill/dependencies/build --parallel
 
     cmake -G Ninja -S external/remill -B external/remill/build \
         -DCMAKE_PREFIX_PATH="$SCRIPT_DIR/external/remill/install" \

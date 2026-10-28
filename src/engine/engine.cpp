@@ -12,6 +12,7 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include <chrono>
+#include <fstream>
 
 #include <LIEF/Abstract/Header.hpp>
 #include <LIEF/Abstract/Section.hpp>
