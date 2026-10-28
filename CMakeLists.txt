@@ -9,8 +9,11 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(VEXA_BUILD_CLI "Build vexa-cli executable" ON)
 option(VEXA_BUILD_TESTS "Build vexa test suite" OFF)
 
-include(FetchContent)
 include(GNUInstallDirs)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(EXPECTED_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(TCB_SPAN_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+
 
 # Compiler flags
 if(MSVC OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
@@ -60,127 +63,27 @@ set(LLVM_REQUIRED_COMPONENTS
 )
 llvm_map_components_to_libnames(LLVM_LIBS ${LLVM_REQUIRED_COMPONENTS})
 
-# CLI11 (header-only)
-find_package(CLI11 QUIET CONFIG)
-if(NOT CLI11_FOUND)
-    find_path(CLI11_INCLUDE_DIR NAMES CLI/CLI.hpp PATH_SUFFIXES include share/include)
-    if(CLI11_INCLUDE_DIR)
-        add_library(CLI11::CLI11 INTERFACE IMPORTED GLOBAL)
-        set_target_properties(CLI11::CLI11 PROPERTIES
-            INTERFACE_INCLUDE_DIRECTORIES "${CLI11_INCLUDE_DIR}"
-        )
-    else()
-        FetchContent_Declare(
-            CLI11
-            GIT_REPOSITORY https://github.com/CLIUtils/CLI11.git
-            GIT_TAG        v2.4.2
-            GIT_SHALLOW    TRUE
-        )
-        FetchContent_MakeAvailable(CLI11)
-    endif()
+# CLI11 (header-only submodule)
+set(CLI11_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(CLI11_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+add_subdirectory(external/cli11)
+
+# Quill (logging submodule)
+set(QUILL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(external/quill)
+if(TARGET quill AND NOT TARGET quill::quill)
+    add_library(quill::quill ALIAS quill)
 endif()
 
-# Quill (async logging)
-find_package(quill QUIET CONFIG)
-if(NOT quill_FOUND)
-    find_library(QUILL_LIB NAMES quill libquill PATH_SUFFIXES lib)
-    find_path(QUILL_INC NAMES quill/Backend.h PATH_SUFFIXES include)
-    if(QUILL_LIB AND QUILL_INC)
-        add_library(quill::quill STATIC IMPORTED GLOBAL)
-        set_target_properties(quill::quill PROPERTIES
-            IMPORTED_LOCATION "${QUILL_LIB}"
-            INTERFACE_INCLUDE_DIRECTORIES "${QUILL_INC}"
-        )
-    else()
-        FetchContent_Declare(
-            quill
-            GIT_REPOSITORY https://github.com/odygrd/quill.git
-            GIT_TAG        v12.0.0
-            GIT_SHALLOW    TRUE
-        )
-        FetchContent_MakeAvailable(quill)
-        if(TARGET quill AND NOT TARGET quill::quill)
-            add_library(quill::quill ALIAS quill)
-        endif()
-    endif()
-endif()
-
-# LIEF executable format parser
-find_package(LIEF QUIET CONFIG)
-if(NOT LIEF_FOUND)
-    find_library(LIEF_LIB NAMES LIEF libLIEF PATH_SUFFIXES lib)
-    find_path(LIEF_INC NAMES LIEF/LIEF.hpp PATH_SUFFIXES include)
-    find_library(SPDLOG_LIB NAMES spdlog libspdlog PATH_SUFFIXES lib)
-    find_library(MBEDTLS_LIB NAMES mbedtls libmbedtls PATH_SUFFIXES lib)
-    find_library(MBEDX509_LIB NAMES mbedx509 libmbedx509 PATH_SUFFIXES lib)
-    find_library(MBEDCRYPTO_LIB NAMES mbedcrypto libmbedcrypto PATH_SUFFIXES lib)
-
-    if(LIEF_LIB AND LIEF_INC)
-        add_library(LIEF::LIEF STATIC IMPORTED GLOBAL)
-        set(LIEF_DEPS_LIBS "")
-        if(SPDLOG_LIB)
-            list(APPEND LIEF_DEPS_LIBS "${SPDLOG_LIB}")
-        endif()
-        if(MBEDTLS_LIB)
-            list(APPEND LIEF_DEPS_LIBS "${MBEDTLS_LIB}" "${MBEDX509_LIB}" "${MBEDCRYPTO_LIB}")
-        endif()
-        set_target_properties(LIEF::LIEF PROPERTIES
-            IMPORTED_LOCATION "${LIEF_LIB}"
-            INTERFACE_INCLUDE_DIRECTORIES "${LIEF_INC}"
-            INTERFACE_LINK_LIBRARIES "${LIEF_DEPS_LIBS}"
-        )
-        target_compile_definitions(LIEF::LIEF INTERFACE SPDLOG_COMPILED_LIB SPDLOG_NO_EXCEPTIONS)
-    else()
-        set(LIEF_DOC OFF CACHE BOOL "" FORCE)
-        set(LIEF_PYTHON_API OFF CACHE BOOL "" FORCE)
-        set(LIEF_EXAMPLES OFF CACHE BOOL "" FORCE)
-        set(LIEF_TESTS OFF CACHE BOOL "" FORCE)
-        FetchContent_Declare(
-            LIEF
-            GIT_REPOSITORY https://github.com/lief-project/LIEF.git
-            GIT_TAG        0.17.6
-            GIT_SHALLOW    TRUE
-        )
-        FetchContent_MakeAvailable(LIEF)
-        if(TARGET LIB_LIEF AND NOT TARGET LIEF::LIEF)
-            add_library(LIEF::LIEF ALIAS LIB_LIEF)
-        endif()
-    endif()
-endif()
-
-# LIEF public header dependencies (tl-expected, tcb-span, utfcpp, frozen, spdlog)
-find_path(TL_EXPECTED_INC NAMES tl/expected.hpp PATH_SUFFIXES include)
-if(NOT TL_EXPECTED_INC)
-    FetchContent_Declare(tl_expected GIT_REPOSITORY https://github.com/TartanLlama/expected.git GIT_TAG v1.1.0 GIT_SHALLOW TRUE)
-    FetchContent_MakeAvailable(tl_expected)
-else()
-    include_directories(SYSTEM ${TL_EXPECTED_INC})
-endif()
-
-find_path(TCB_SPAN_INC NAMES tcb/span.hpp PATH_SUFFIXES include)
-if(NOT TCB_SPAN_INC)
-    FetchContent_Declare(tcb_span GIT_REPOSITORY https://github.com/tcbrindle/span.git GIT_TAG master GIT_SHALLOW TRUE)
-    FetchContent_MakeAvailable(tcb_span)
-else()
-    include_directories(SYSTEM ${TCB_SPAN_INC})
-endif()
-
-find_path(UTFCPP_INC NAMES utf8.h PATH_SUFFIXES include include/utf8cpp)
-if(NOT UTFCPP_INC)
-    FetchContent_Declare(utfcpp GIT_REPOSITORY https://github.com/nemtrif/utfcpp.git GIT_TAG v4.0.5 GIT_SHALLOW TRUE)
-    FetchContent_MakeAvailable(utfcpp)
-else()
-    include_directories(SYSTEM ${UTFCPP_INC})
-endif()
-
-find_path(FROZEN_INC NAMES frozen/map.h PATH_SUFFIXES include)
-if(FROZEN_INC)
-    include_directories(SYSTEM ${FROZEN_INC})
-endif()
-
-find_path(SPDLOG_INC NAMES spdlog/spdlog.h PATH_SUFFIXES include)
-if(SPDLOG_INC)
-    include_directories(SYSTEM ${SPDLOG_INC})
+# LIEF (executable parser submodule)
+set(LIEF_DOC OFF CACHE BOOL "" FORCE)
+set(LIEF_PYTHON_API OFF CACHE BOOL "" FORCE)
+set(LIEF_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LIEF_TESTS OFF CACHE BOOL "" FORCE)
+set(LIEF_INSTALL OFF CACHE BOOL "" FORCE)
+add_subdirectory(external/lief)
+if(TARGET LIB_LIEF AND NOT TARGET LIEF::LIEF)
+    add_library(LIEF::LIEF ALIAS LIB_LIEF)
 endif()
 
 # Bitwright Rust library

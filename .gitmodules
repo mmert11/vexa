@@ -4,3 +4,12 @@
 [submodule "external/bitwright"]
 	path = external/bitwright
 	url = https://github.com/valeria-org/bitwright.git
+[submodule "external/cli11"]
+	path = external/cli11
+	url = https://github.com/CLIUtils/CLI11.git
+[submodule "external/quill"]
+	path = external/quill
+	url = https://github.com/odygrd/quill.git
+[submodule "external/lief"]
+	path = external/lief
+	url = https://github.com/lief-project/LIEF.git
